@@ -561,7 +561,7 @@ const STRATEGY_TOOLS: Tool[] = [
   {
     name: "list_thumbnail_runs",
     description:
-      "Recent thumbnail generation runs for this channel: title, prompt used, provider and model, number of variants, recorded cost (null when the provider reported no usage), and which variant was picked. You cannot start a generation — if the user wants new thumbnails, point them at Ideation → Thumbnails.",
+      "Recent thumbnail generation runs for this channel: title, prompt used, provider and model, number of variants, output format (16:9 video cover or 9:16 Shorts cover), recorded cost (null when the provider reported no usage), and which variant was picked. You cannot start a generation — if the user wants new thumbnails, point them at Ideation → Thumbnails.",
     input_schema: {
       type: "object",
       properties: { limit: { type: "number", default: 10 } },
@@ -1230,6 +1230,7 @@ export async function runTool(name: string, input: ToolInput): Promise<ToolResul
             provider: run.provider,
             model: run.model,
             variants: run.variants,
+            aspect: run.aspect,
             costCents: run.cost_cents,
             createdAt: run.created_at,
             picked: listThumbnailVariants(run.id).some((v) => v.picked === 1),

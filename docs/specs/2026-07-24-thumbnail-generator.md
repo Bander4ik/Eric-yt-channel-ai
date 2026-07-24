@@ -217,9 +217,13 @@ No generation tool — the chat must not spend the user's money.
 
 ### P2 — Nice to have
 
-- 9:16 Shorts output.
+- 9:16 Shorts output. **Built** — see the Shorts section below.
 - Layer export (background PNG + text layer) for Photoshop/Canva finishing.
-- Auto-refresh of the profile as a scheduled background job.
+  **Built.**
+- Auto-refresh of the profile as a scheduled background job. **Deliberately
+  not built**: it would spend the user's key with nobody watching, which
+  the platform rule "paid calls only on an explicit user action" forbids.
+  The profile already refreshes on demand and reports when it is stale.
 
 ## Technical Architecture
 
@@ -513,8 +517,55 @@ usable image is still open.
 is Claude vision and the prompt builder is Claude text; kie only draws
 the picture.
 
-**Still not built:** Shorts 9:16 and layer export (both P2, and Shorts
-waits on knowing whether Eric ships any).
+### Shorts, layer export and the remix comparison (2026-07-24, same day)
+
+Everything the brief and the P1/P2 lists ask for that does not need a
+provider key is now built. Three additions:
+
+- **9:16 Shorts output.** A format switch on the Generate card, carried
+  through the prompt builder, all four provider adapters, the canvas
+  renderer and the run row (`thumbnail_runs.aspect`, idempotent
+  migration, existing rows read as 16:9). It is not a crop: the prompt
+  tells the model to re-compose the channel's visual grammar for a tall
+  frame, and the overlay's margins and font ceiling are fractions of the
+  frame rather than pixels, so type is proportionally the same size on
+  both. Output is 1080x1920; OpenAI gets 1088x1920 because its edges must
+  be multiples of 16, and the cover-fit crops the 8 pixels back off.
+- **Layer export.** `GET /api/thumbnails/variants/[id]/layers` renders
+  the headline alone on transparency, at the exact size and position it
+  occupies on the finished cover. The background is already on disk as
+  the `-base.png`, so the two open as stacked layers in Photoshop or
+  Canva without retyping the headline. Rendered on demand, so it always
+  reflects the current overlay rather than the first one; a variant whose
+  text the image model drew gets a 400 that says why.
+- **Remix comparison.** A remix run now carries the cover that actually
+  shipped, with its view count and a link, rendered above the generated
+  set. That is the only honest way to judge the generator: not "is this
+  nice" but "would I click this instead of the one that earned 28M views".
+
+Two real defects surfaced while testing this, both invisible until an
+image was looked at rather than counted:
+
+| Defect | Effect | Fix |
+|---|---|---|
+| `generateImages` was called once per variant with `count: 1`, so its internal index was always 0 | Every variant of a run got the *identical* prompt — the per-variant nudges never fired, and four "variants" would have come back near-identical from a real provider. In dry run the four PNGs were byte-for-byte the same, which is what exposed it | `variantIndex` on the options, so the caller says which variant this is |
+| The font-size search only tested whether the wrapped text fit the box *vertically* | On a tall frame the height budget never bites, so a long word was sized until it ran off both edges. The 16:9 path had the same latent bug for any single word wider than the frame | The search now requires the widest line to fit as well, plus a step-down guard below the search floor |
+
+Verified by running it, in dry run on a real synced channel:
+
+| Check | Result |
+|---|---|
+| 9:16 generation | 3 variants, all `1080x1920`, three distinct images |
+| 16:9 regression | still `1280x720` |
+| Cyrillic headline on a 9:16 cover | composited whole, inside the frame, screenshotted and looked at |
+| Re-render after an edit | stays `1080x1920` — the aspect travels with the overlay spec, not the request |
+| Layer export | `1080x1920` RGBA, transparent outside the glyphs, headline in the same position as on the cover |
+| Layer export refusals | 404 unknown id, 400 non-numeric, 400 with an explanation when the model drew the text |
+| Batch and remix | both carry the chosen aspect into the run row |
+| Remix comparison | renders the shipped cover with its view count above the generated set |
+
+**Still not built:** nothing from the brief. The only open item is the
+first run against live keys.
 
 ## Appendix: Research Findings (2026-07-24)
 

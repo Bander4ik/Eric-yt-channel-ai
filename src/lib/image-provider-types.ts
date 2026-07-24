@@ -169,9 +169,57 @@ export function isImageProviderChoice(v: unknown): v is ImageProviderChoice {
   );
 }
 
-/** YouTube's own thumbnail spec. Everything is produced at this size. */
+/** YouTube's own thumbnail spec — the size a 16:9 cover is produced at. */
 export const THUMBNAIL_WIDTH = 1280;
 export const THUMBNAIL_HEIGHT = 720;
+
+/**
+ * Output shape. A long-form cover and a Shorts cover are different design
+ * problems, not the same picture cropped: the safe area, the headline
+ * zone and the subject scale all change, so the aspect travels with the
+ * run instead of being applied afterwards.
+ */
+export type AspectChoice = "16:9" | "9:16";
+
+export const ASPECT_CHOICES: AspectChoice[] = ["16:9", "9:16"];
+export const DEFAULT_ASPECT: AspectChoice = "16:9";
+
+export function isAspectChoice(v: unknown): v is AspectChoice {
+  return v === "16:9" || v === "9:16";
+}
+
+export function coerceAspect(v: unknown): AspectChoice {
+  return isAspectChoice(v) ? v : DEFAULT_ASPECT;
+}
+
+export function aspectLabel(a: AspectChoice): string {
+  return a === "9:16" ? "9:16 Shorts" : "16:9 video";
+}
+
+/**
+ * Pixel size per aspect. 1080x1920 is what YouTube itself asks for on a
+ * vertical cover; both edges are also multiples of 8, which keeps the
+ * providers that quantise sizes happy.
+ */
+export function frameSize(a: AspectChoice): { width: number; height: number } {
+  return a === "9:16"
+    ? { width: 1080, height: 1920 }
+    : { width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT };
+}
+
+/**
+ * Same frame, rounded to the multiple-of-16 edges OpenAI's image models
+ * require. 1080 is not one; 1088 is, and the 8-pixel difference is
+ * cropped away by the cover-fit in the overlay renderer.
+ */
+export function frameSizeMultipleOf16(a: AspectChoice): {
+  width: number;
+  height: number;
+} {
+  const { width, height } = frameSize(a);
+  const round16 = (n: number) => Math.round(n / 16) * 16;
+  return { width: round16(width), height: round16(height) };
+}
 
 export const MAX_VARIANTS = 8;
 export const DEFAULT_VARIANTS = 4;

@@ -5473,6 +5473,22 @@ db.exec(`
     ON brand_assets(channel_id, kind);
 `);
 
+// Shorts covers arrived after the first runs were already recorded, so
+// the aspect is a migration rather than a column in the CREATE above.
+// Existing rows are 16:9 because that is all the app could produce.
+try {
+  const runCols = (
+    db.prepare(`PRAGMA table_info(thumbnail_runs)`).all() as { name: string }[]
+  ).map((c) => c.name);
+  if (!runCols.includes("aspect")) {
+    db.exec(
+      `ALTER TABLE thumbnail_runs ADD COLUMN aspect TEXT NOT NULL DEFAULT '16:9'`
+    );
+  }
+} catch {
+  /* noop -- table may not exist yet on a brand-new DB */
+}
+
 // Picking a generated thumbnail attaches it to the idea card it came
 // from. Idempotent migration in the same style as the rest of the file.
 try {
@@ -5849,6 +5865,8 @@ export type ThumbnailRunRow = {
   variants: number;
   cost_cents: number | null;
   reference_ids: string | null;
+  /** '16:9' or '9:16'. Older rows predate Shorts support and are 16:9. */
+  aspect: string;
   created_at: number;
 };
 
@@ -5873,14 +5891,15 @@ export function createThumbnailRun(input: {
   provider: string;
   model: string;
   variants: number;
+  aspect?: string;
   referenceIds: string[];
 }): number {
   const info = db
     .prepare(
       `INSERT INTO thumbnail_runs
          (channel_id, source_kind, source_id, title, prompt, provider, model,
-          variants, reference_ids, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          variants, aspect, reference_ids, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.channelId,
@@ -5891,6 +5910,7 @@ export function createThumbnailRun(input: {
       input.provider,
       input.model,
       input.variants,
+      input.aspect ?? "16:9",
       JSON.stringify(input.referenceIds),
       Math.floor(Date.now() / 1000)
     );

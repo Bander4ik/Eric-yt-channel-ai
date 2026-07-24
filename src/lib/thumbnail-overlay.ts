@@ -2,10 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
-import {
-  THUMBNAIL_HEIGHT,
-  THUMBNAIL_WIDTH,
-} from "./image-provider-types";
+import { coerceAspect, frameSize } from "./image-provider-types";
 import type {
   OverlaySpec,
   TextZone,
@@ -212,19 +209,75 @@ export function uncoveredCharacters(
  * Rendering
  * ------------------------------------------------------------------ */
 
-const MARGIN = 56;
+/**
+ * Margins and the font-size ceiling are fractions of the frame, not
+ * pixels, so a 1080x1920 Shorts cover gets the same visual proportions
+ * as a 1280x720 one instead of a hairline margin and undersized type.
+ */
+const MARGIN_RATIO = 56 / 1280;
+const MAX_FONT_RATIO = 220 / 720;
+const MIN_FONT_RATIO = 24 / 720;
 const LINE_SPACING = 1.06;
 
 /**
- * Draws `spec.text` onto `baseImage` and returns PNG bytes at the
- * YouTube thumbnail size. Pure and cheap — re-rendering after a text
- * edit costs nothing and calls no API.
+ * Draws `spec.text` onto `baseImage` and returns PNG bytes at the size
+ * the spec's aspect calls for. Pure and cheap — re-rendering after a
+ * text edit costs nothing and calls no API.
  */
 export async function renderOverlay(
   baseImage: Buffer,
   spec: OverlaySpec,
   customFontPath?: string | null
 ): Promise<Buffer> {
+  const family = requireFont(customFontPath);
+  const { width, height } = frameSize(coerceAspect(spec.aspect));
+
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+
+  const img = await loadImage(baseImage);
+  // cover-fit: fill the frame, crop the overflow, never letterbox.
+  const scale = Math.max(width / img.width, height / img.height);
+  const drawW = img.width * scale;
+  const drawH = img.height * scale;
+  ctx.drawImage(img, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
+
+  const text = spec.uppercase ? spec.text.toLocaleUpperCase() : spec.text;
+  if (text.trim()) {
+    drawHeadline(ctx, text, spec, family, width, height);
+  }
+
+  return canvas.toBuffer("image/png");
+}
+
+/**
+ * The headline alone on transparency, at the same size and position as
+ * the composited cover.
+ *
+ * This is the layer-export escape hatch: someone finishing a cover in
+ * Photoshop or Canva wants the background and the type as separate
+ * files, and re-typing the headline by hand there loses the exact
+ * placement the profile chose. Costs nothing — no model is involved.
+ */
+export async function renderTextLayer(
+  spec: OverlaySpec,
+  customFontPath?: string | null
+): Promise<Buffer> {
+  const family = requireFont(customFontPath);
+  const { width, height } = frameSize(coerceAspect(spec.aspect));
+
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+
+  const text = spec.uppercase ? spec.text.toLocaleUpperCase() : spec.text;
+  if (text.trim()) {
+    drawHeadline(ctx, text, spec, family, width, height);
+  }
+
+  return canvas.toBuffer("image/png");
+}
+
+function requireFont(customFontPath?: string | null): string {
   const chosenPath = resolveFontPath(customFontPath);
   const family = registerFont(chosenPath);
   if (!family) {
@@ -232,32 +285,7 @@ export async function renderOverlay(
       `The thumbnail font could not be loaded from ${chosenPath} — text overlay is unavailable.`
     );
   }
-
-  const canvas = createCanvas(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT);
-  const ctx = canvas.getContext("2d");
-
-  const img = await loadImage(baseImage);
-  // cover-fit: fill the frame, crop the overflow, never letterbox.
-  const scale = Math.max(
-    THUMBNAIL_WIDTH / img.width,
-    THUMBNAIL_HEIGHT / img.height
-  );
-  const drawW = img.width * scale;
-  const drawH = img.height * scale;
-  ctx.drawImage(
-    img,
-    (THUMBNAIL_WIDTH - drawW) / 2,
-    (THUMBNAIL_HEIGHT - drawH) / 2,
-    drawW,
-    drawH
-  );
-
-  const text = spec.uppercase ? spec.text.toLocaleUpperCase() : spec.text;
-  if (text.trim()) {
-    drawHeadline(ctx, text, spec, family);
-  }
-
-  return canvas.toBuffer("image/png");
+  return family;
 }
 
 type Ctx2D = ReturnType<ReturnType<typeof createCanvas>["getContext"]>;
@@ -266,24 +294,40 @@ function drawHeadline(
   ctx: Ctx2D,
   text: string,
   spec: OverlaySpec,
-  family: string
+  family: string,
+  width: number,
+  height: number
 ): void {
-  const boxWidth = THUMBNAIL_WIDTH - MARGIN * 2;
-  const boxHeight = THUMBNAIL_HEIGHT * clamp(spec.maxHeightRatio, 0.1, 0.6);
+  const margin = Math.round(width * MARGIN_RATIO);
+  const boxWidth = width - margin * 2;
+  const boxHeight = height * clamp(spec.maxHeightRatio, 0.1, 0.6);
 
   // Binary-search the largest size at which the wrapped text still fits
   // its box. Beats stepping down by 2px: a 3-word headline and a
   // 12-word one both land on their true maximum in ~8 iterations.
-  let lo = 24;
-  let hi = 220;
+  //
+  // The ceiling scales with the frame's SHORT edge — on a 9:16 cover the
+  // limit is how wide a word can be, not how tall the frame is.
+  const shortEdge = Math.min(width, height);
+  let lo = Math.round(shortEdge * MIN_FONT_RATIO);
+  let hi = Math.round(shortEdge * MAX_FONT_RATIO);
   let best = lo;
   let bestLines: string[] = [text];
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2);
     ctx.font = `800 ${mid}px ${family}`;
     const lines = wrapText(ctx, text, boxWidth);
-    const height = lines.length * mid * LINE_SPACING;
-    if (height <= boxHeight) {
+    const stackHeight = lines.length * mid * LINE_SPACING;
+    // Height alone is not enough. A single word wider than the box
+    // cannot be wrapped away, so without the width test the search
+    // happily returns a size whose longest line runs off both edges --
+    // which is what a tall 9:16 frame produces, since its height budget
+    // is generous enough to never bite first.
+    const widest = Math.max(
+      ...lines.map((l) => ctx.measureText(l).width),
+      0
+    );
+    if (stackHeight <= boxHeight && widest <= boxWidth) {
       best = mid;
       bestLines = lines;
       lo = mid + 1;
@@ -292,12 +336,31 @@ function drawHeadline(
     }
   }
 
-  const fontSize = best;
+  // The search cannot go below its own floor, so an extremely long
+  // single word (a hashtag, a German compound) can still be too wide at
+  // the smallest searched size. Step it down rather than let it bleed
+  // off the frame.
+  let fontSize = best;
+  for (let guard = 0; guard < 40 && fontSize > 8; guard++) {
+    ctx.font = `800 ${fontSize}px ${family}`;
+    const lines = wrapText(ctx, text, boxWidth);
+    const widest = Math.max(...lines.map((l) => ctx.measureText(l).width), 0);
+    if (widest <= boxWidth) {
+      bestLines = lines;
+      break;
+    }
+    fontSize = Math.floor(fontSize * 0.9);
+  }
+
   ctx.font = `800 ${fontSize}px ${family}`;
   const lineHeight = fontSize * LINE_SPACING;
   const blockHeight = bestLines.length * lineHeight;
 
-  const { x, y, align } = zoneAnchor(spec.zone, blockHeight);
+  const { x, y, align } = zoneAnchor(spec.zone, blockHeight, {
+    width,
+    height,
+    margin,
+  });
   ctx.textAlign = align;
   ctx.textBaseline = "top";
 
@@ -327,14 +390,15 @@ function drawHeadline(
 
 function zoneAnchor(
   zone: TextZone,
-  blockHeight: number
+  blockHeight: number,
+  frame: { width: number; height: number; margin: number }
 ): { x: number; y: number; align: "left" | "center" | "right" } {
-  const top = MARGIN;
-  const middle = (THUMBNAIL_HEIGHT - blockHeight) / 2;
-  const bottom = THUMBNAIL_HEIGHT - MARGIN - blockHeight;
-  const left = MARGIN;
-  const centerX = THUMBNAIL_WIDTH / 2;
-  const right = THUMBNAIL_WIDTH - MARGIN;
+  const top = frame.margin;
+  const middle = (frame.height - blockHeight) / 2;
+  const bottom = frame.height - frame.margin - blockHeight;
+  const left = frame.margin;
+  const centerX = frame.width / 2;
+  const right = frame.width - frame.margin;
 
   switch (zone) {
     case "top-left":

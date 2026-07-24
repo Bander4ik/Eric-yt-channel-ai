@@ -9,6 +9,7 @@ import {
   Download,
   Image as ImageIcon,
   Info,
+  Layers,
   Loader2,
   Plug,
   RefreshCw,
@@ -23,10 +24,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  ASPECT_CHOICES,
+  DEFAULT_ASPECT,
   DEFAULT_VARIANTS,
   findModelOption,
   MAX_VARIANTS,
   isImageProviderChoice,
+  type AspectChoice,
 } from "@/lib/image-provider-types";
 import { TEXT_ZONES, type TextZone } from "@/lib/thumbnail-overlay-types";
 import { BrandAssetsPanel } from "@/components/ideation/brand-assets-panel";
@@ -107,6 +111,13 @@ type Variant = {
   picked: number;
 };
 
+type RemixOriginal = {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  views: number | null;
+};
+
 type Run = {
   id: number;
   title: string;
@@ -114,9 +125,12 @@ type Run = {
   provider: string;
   model: string;
   variants: number;
+  aspect?: string;
   cost_cents: number | null;
   referenceIds: string[];
   variantsList?: Variant[];
+  /** Set for remix runs: the cover that actually shipped. */
+  compareWith?: RemixOriginal | null;
 };
 
 type GenerateResponse = {
@@ -168,6 +182,7 @@ type HistoryRun = {
   model: string;
   sourceKind: string;
   variants: number;
+  aspect?: string;
   costCents: number | null;
   createdAt: number;
   images: Variant[];
@@ -213,6 +228,7 @@ export function ThumbnailsTab() {
   const [sourceId, setSourceId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [variants, setVariants] = useState(DEFAULT_VARIANTS);
+  const [aspect, setAspect] = useState<AspectChoice>(DEFAULT_ASPECT);
   const [ownVideos, setOwnVideos] = useState<OwnVideo[]>([]);
   const [remix, setRemix] = useState<OwnVideo | null>(null);
   const [videoQuery, setVideoQuery] = useState("");
@@ -366,6 +382,7 @@ export function ThumbnailsTab() {
           source: batchSource,
           count: batchCount,
           variants: Math.min(variants, 4),
+          aspect,
         }),
       });
       const j = (await r.json()) as { error?: string };
@@ -388,6 +405,7 @@ export function ThumbnailsTab() {
           title,
           userNote: note || null,
           variants,
+          aspect,
           sourceKind: remix ? "video_remix" : sourceId ? "idea" : "manual",
           sourceId: remix ? remix.id : sourceId ?? null,
           prompt: opts.reusePrompt ? promptDraft : undefined,
@@ -602,6 +620,8 @@ export function ThumbnailsTab() {
               </>
             )}
 
+            <AspectPicker value={aspect} onChange={setAspect} />
+
             <div
               className={cn(
                 "flex flex-wrap items-center gap-3",
@@ -793,7 +813,8 @@ function HistoryPanel({
                   <div className="truncate font-medium">{r.title}</div>
                   <div className="text-muted-foreground">
                     {new Date(r.createdAt * 1000).toLocaleString()} ·{" "}
-                    {r.sourceKind} · {r.model}
+                    {r.sourceKind} · {r.model} ·{" "}
+                    {r.aspect === "9:16" ? "9:16 Shorts" : "16:9"}
                   </div>
                 </div>
                 <span className="text-muted-foreground">
@@ -979,6 +1000,52 @@ function RemixPicker({
           that shipped.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Long-form cover or Shorts cover. Two buttons rather than a dropdown
+ * because the choice changes the whole prompt, not a detail of it — the
+ * style profile gets re-composed for a tall frame instead of being
+ * cropped into one.
+ */
+function AspectPicker({
+  value,
+  onChange,
+}: {
+  value: AspectChoice;
+  onChange: (a: AspectChoice) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      Format
+      {ASPECT_CHOICES.map((a) => (
+        <button
+          key={a}
+          type="button"
+          onClick={() => onChange(a)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors",
+            value === a
+              ? "border-primary bg-primary/10 text-foreground"
+              : "border-border hover:text-foreground"
+          )}
+        >
+          <span
+            className={cn(
+              "rounded-[2px] border border-current",
+              a === "9:16" ? "h-3.5 w-2" : "h-2 w-3.5"
+            )}
+          />
+          {a === "9:16" ? "9:16 Shorts" : "16:9 video"}
+        </button>
+      ))}
+      <span>
+        {value === "9:16"
+          ? "1080x1920, composed for a tall frame"
+          : "1280x720, the YouTube cover size"}
+      </span>
     </div>
   );
 }
@@ -1283,6 +1350,9 @@ function ResultGrid({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <ImageIcon className="h-4 w-4" /> {run.title}
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+              {run.aspect === "9:16" ? "9:16 Shorts" : "16:9"}
+            </span>
           </div>
           <div className="text-xs text-muted-foreground">
             {run.cost_cents !== null
@@ -1291,11 +1361,14 @@ function ResultGrid({
           </div>
         </div>
 
+        {run.compareWith && <RemixComparison original={run.compareWith} />}
+
         <div className="grid gap-4 sm:grid-cols-2">
           {run.images.map((v) => (
             <VariantCard
               key={v.id}
               variant={v}
+              vertical={run.aspect === "9:16"}
               draft={editing[v.id]}
               setDraft={(text) => setEditing({ ...editing, [v.id]: text })}
               onRerender={onRerender}
@@ -1308,14 +1381,62 @@ function ResultGrid({
   );
 }
 
+/**
+ * The cover that actually shipped, shown above the generated set on a
+ * remix run.
+ *
+ * This is the only honest way to judge the generator: not "does this
+ * look good" in isolation, but "would I have clicked this instead of the
+ * one that earned those views".
+ */
+function RemixComparison({ original }: { original: RemixOriginal }) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-border bg-muted/40 p-2">
+      {original.thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={original.thumbnailUrl}
+          alt={original.title}
+          className="h-[72px] w-32 shrink-0 rounded bg-muted object-cover"
+        />
+      ) : (
+        <div className="h-[72px] w-32 shrink-0 rounded bg-muted" />
+      )}
+      <div className="min-w-0 text-xs">
+        <div className="font-medium text-foreground">
+          The cover that shipped
+        </div>
+        <div className="truncate text-muted-foreground">{original.title}</div>
+        <div className="mt-0.5 text-muted-foreground">
+          {original.views !== null
+            ? `${fmtCompact(original.views)} views`
+            : "views unknown"}{" "}
+          ·{" "}
+          <a
+            href={`https://youtube.com/watch?v=${original.videoId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            open on YouTube
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VariantCard({
   variant,
+  vertical,
   draft,
   setDraft,
   onRerender,
   onPick,
 }: {
   variant: Variant;
+  /** A 9:16 cover is capped in height so two of them still fit a screen. */
+  vertical: boolean;
   draft: string | undefined;
   setDraft: (s: string) => void;
   onRerender: (v: Variant, patch: Record<string, unknown>) => void;
@@ -1360,7 +1481,10 @@ function VariantCard({
         <img
           src={fileUrl(shown)}
           alt={overlay?.text ?? "generated thumbnail"}
-          className="w-full rounded"
+          className={cn(
+            "rounded",
+            vertical ? "mx-auto max-h-[460px] w-auto" : "w-full"
+          )}
         />
       )}
 
@@ -1416,13 +1540,31 @@ function VariantCard({
           </a>
         )}
         {variant.base_path && variant.final_path !== variant.base_path && (
-          <button
-            type="button"
-            onClick={() => setShowBase((v) => !v)}
-            className="text-xs text-muted-foreground underline"
-          >
-            {showBase ? "with text" : "background only"}
-          </button>
+          <>
+            <a
+              href={fileUrl(variant.base_path)}
+              download
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs"
+              title="The model's picture with no headline on it — the bottom layer"
+            >
+              <Layers className="h-3.5 w-3.5" /> Background
+            </a>
+            <a
+              href={`/api/thumbnails/variants/${variant.id}/layers`}
+              download
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs"
+              title="The headline alone on transparency, in the same position — the top layer"
+            >
+              <Layers className="h-3.5 w-3.5" /> Text layer
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowBase((v) => !v)}
+              className="text-xs text-muted-foreground underline"
+            >
+              {showBase ? "with text" : "background only"}
+            </button>
+          </>
         )}
       </div>
     </div>

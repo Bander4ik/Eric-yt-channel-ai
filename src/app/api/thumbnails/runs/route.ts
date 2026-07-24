@@ -27,6 +27,7 @@ export async function GET(req: Request) {
     sourceKind: run.source_kind,
     sourceId: run.source_id,
     variants: run.variants,
+    aspect: run.aspect,
     costCents: run.cost_cents,
     createdAt: run.created_at,
     images: listThumbnailVariants(run.id),

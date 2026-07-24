@@ -6,6 +6,7 @@ import {
 } from "@/lib/db";
 import { runGeneration } from "@/lib/thumbnail-generate";
 import { preflight } from "@/lib/thumbnail-preflight";
+import { coerceAspect } from "@/lib/image-provider-types";
 import {
   finishJob,
   isJobRunning,
@@ -46,6 +47,7 @@ type Body = {
   source?: unknown;
   count?: unknown;
   variants?: unknown;
+  aspect?: unknown;
 };
 
 type Seed = { title: string; sourceId: string | null; why: string };
@@ -79,6 +81,7 @@ export async function POST(req: Request) {
     MAX_VARIANTS_PER_TITLE
   );
 
+  const aspect = coerceAspect(body.aspect);
   const seeds = collectSeeds(source, count);
   if (seeds.length === 0) {
     return NextResponse.json(
@@ -127,6 +130,7 @@ export async function POST(req: Request) {
           sourceId: seed.sourceId,
           userNote: seed.why,
           variants,
+          aspect,
           onProgress: (p) =>
             progressJob(key, {
               // Progress is cumulative across titles, so the bar means

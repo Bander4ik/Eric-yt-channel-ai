@@ -6,6 +6,8 @@
  * tab needs the zone list and the spec type to render its controls.
  */
 
+import { DEFAULT_ASPECT, type AspectChoice } from "./image-provider-types";
+
 export type TextZone =
   | "top-left"
   | "top-center"
@@ -32,6 +34,12 @@ export const TEXT_ZONES: TextZone[] = [
 export type OverlaySpec = {
   text: string;
   zone: TextZone;
+  /**
+   * Frame shape this overlay was drawn for. Stored with the spec rather
+   * than looked up from the run, so a re-render years later still lands
+   * on the same canvas as the background it is drawn onto.
+   */
+  aspect: AspectChoice;
   /** Fill colour. Defaults to white, which survives most backgrounds. */
   color: string;
   /** Outline colour; ignored when `stroke` is false. */
@@ -45,6 +53,7 @@ export type OverlaySpec = {
 
 export const DEFAULT_OVERLAY: Omit<OverlaySpec, "text"> = {
   zone: "bottom-left",
+  aspect: DEFAULT_ASPECT,
   color: "#FFFFFF",
   strokeColor: "#000000",
   stroke: true,

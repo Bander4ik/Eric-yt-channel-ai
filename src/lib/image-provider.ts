@@ -1,9 +1,11 @@
 import "server-only";
 import OpenAI, { toFile } from "openai";
 import {
+  DEFAULT_ASPECT,
   findModelOption,
-  THUMBNAIL_HEIGHT,
-  THUMBNAIL_WIDTH,
+  frameSize,
+  frameSizeMultipleOf16,
+  type AspectChoice,
   type ImageProviderChoice,
 } from "./image-provider-types";
 import { dryRunImage, isDryRun } from "./thumbnail-dryrun";
@@ -46,6 +48,17 @@ export interface GenerateImagesOpts {
   /** Brand assets — a recurring mascot, logo or frame. */
   characterRefs: ReferenceImage[];
   count: number;
+  /** 16:9 long-form cover or 9:16 Shorts cover. Defaults to 16:9. */
+  aspect?: AspectChoice;
+  /**
+   * Which variant of the run this call is producing.
+   *
+   * The caller asks for one image at a time (see the note above), so
+   * without this every call would look like variant 0 to the nudge
+   * table below and all four covers would come back from an identical
+   * prompt — exactly the near-duplicate set the nudges exist to prevent.
+   */
+  variantIndex?: number;
 }
 
 export interface ReferenceImage {
@@ -102,10 +115,12 @@ export async function generateImages(
   // THUMBNAILS_DRY_RUN=1 short-circuits before any network call so the
   // rest of the pipeline can be exercised without a key. No usage is
   // reported, so the run correctly records no cost.
+  const first = opts.variantIndex ?? 0;
+
   if (isDryRun()) {
     for (let i = 0; i < opts.count; i++) {
       images.push({
-        bytes: dryRunImage(i, opts.prompt),
+        bytes: dryRunImage(first + i, opts.prompt, opts.aspect ?? DEFAULT_ASPECT),
         mimeType: "image/png",
       });
     }
@@ -114,7 +129,7 @@ export async function generateImages(
 
   for (let i = 0; i < opts.count; i++) {
     try {
-      images.push(await generateOne(opts, i));
+      images.push(await generateOne(opts, first + i));
     } catch (err) {
       errors.push(err instanceof Error ? err.message : String(err));
     }
@@ -209,7 +224,7 @@ async function generateGemini(
       response_format: {
         type: "image",
         mime_type: "image/png",
-        aspect_ratio: "16:9",
+        aspect_ratio: opts.aspect ?? DEFAULT_ASPECT,
         image_size: "2K",
       },
     }),
@@ -313,10 +328,11 @@ async function generateOpenAI(
   const { style, character } = cappedRefs(opts);
   const refs = [...style, ...character];
   const prompt = promptForVariant(opts.prompt, index);
-  // gpt-image-2 accepts any size whose edges are multiples of 16, and
-  // 1280x720 satisfies that — so we ask for the exact YouTube size and
-  // skip a resample step entirely.
-  const size = `${THUMBNAIL_WIDTH}x${THUMBNAIL_HEIGHT}` as const;
+  // gpt-image-2 accepts any size whose edges are multiples of 16. 16:9
+  // lands exactly on the YouTube size; the 9:16 frame is nudged from
+  // 1080 to 1088 wide, and the overlay's cover-fit crops the difference.
+  const dims = frameSizeMultipleOf16(opts.aspect ?? DEFAULT_ASPECT);
+  const size = `${dims.width}x${dims.height}` as `${number}x${number}`;
 
   const result = refs.length
     ? await client.images.edit({
@@ -360,7 +376,7 @@ async function generateFal(
 
   const body: Record<string, unknown> = {
     prompt: promptForVariant(opts.prompt, index),
-    image_size: { width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT },
+    image_size: frameSize(opts.aspect ?? DEFAULT_ASPECT),
     num_images: 1,
   };
   // fal takes references as URLs, and data: URIs count — which saves us
@@ -450,7 +466,7 @@ async function generateKie(
       model: opts.model,
       input: {
         prompt: promptForVariant(opts.prompt, index),
-        aspect_ratio: "16:9",
+        aspect_ratio: opts.aspect ?? DEFAULT_ASPECT,
         output_format: "png",
         ...(imageInput.length ? { image_input: imageInput } : {}),
       },

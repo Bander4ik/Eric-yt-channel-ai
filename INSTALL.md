@@ -249,7 +249,7 @@ You can add **several** keys (even two of the same provider) and switch which on
 - **AI Chat** — talk to Claude about your channel; attach videos to focus the conversation.
 - **Hook Lab** — auto-scores the opening of every video on 7 dimensions (curiosity, value promise, conflict, specific language, identification, pacing, benefit).
 - **Competitors** — track other channels, sync their videos.
-- **Ideation → Thumbnails** — generate video covers in the style that measurably works on your channel. Click **Analyse what works here** once (it reads your best-performing thumbnails and your competitors'), then generate covers for a title, remix a video you already published, or let the app pick from your Board. It always shows which videos the result was based on. Needs an image-generation key — see 4.7.
+- **Ideation → Thumbnails** — generate video covers in the style that measurably works on your channel. Click **Analyse what works here** once (it reads your best-performing thumbnails and your competitors'), then generate covers for a title, remix a video you already published, or let the app pick from your Board. It always shows which videos the result was based on. Pick **16:9 video** or **9:16 Shorts** before generating — a Shorts cover is composed for a tall frame, not cropped from a wide one. Each finished cover can be downloaded flat, or as two layers (**Background** and **Text layer**, the headline alone on transparency) if you finish covers in Photoshop or Canva. Needs an image-generation key — see 4.7.
 - **Logs** — every API call, error, and event in chronological order. Handy for debugging.
 
 ---

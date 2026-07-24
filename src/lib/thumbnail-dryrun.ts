@@ -1,5 +1,6 @@
 import "server-only";
 import { createCanvas } from "@napi-rs/canvas";
+import { DEFAULT_ASPECT, type AspectChoice } from "./image-provider-types";
 import type { ThumbnailStyleProfile } from "./thumbnail-style";
 
 /**
@@ -84,9 +85,17 @@ export function dryRunPrompt(title: string): string {
  * is visibly four different pictures rather than one repeated — which is
  * exactly what a broken loop would look like.
  */
-export function dryRunImage(index: number, title: string): Buffer {
-  const width = 1536;
-  const height = 864;
+export function dryRunImage(
+  index: number,
+  title: string,
+  aspect: AspectChoice = DEFAULT_ASPECT
+): Buffer {
+  // Deliberately NOT the exact output size: the placeholder is a stand-in
+  // for a provider's image, and providers return their own dimensions.
+  // Rendering it oversized keeps the cover-fit crop in the overlay under
+  // test instead of accidentally bypassing it.
+  const width = aspect === "9:16" ? 864 : 1536;
+  const height = aspect === "9:16" ? 1536 : 864;
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 

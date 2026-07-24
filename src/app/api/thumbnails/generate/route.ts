@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import {
   getActiveChannelId,
   getActiveImageProvider,
+  getVideo,
   listThumbnailRuns,
   listThumbnailVariants,
 } from "@/lib/db";
 import { runGeneration } from "@/lib/thumbnail-generate";
 import { preflight } from "@/lib/thumbnail-preflight";
 import {
+  coerceAspect,
   DEFAULT_VARIANTS,
   MAX_VARIANTS,
 } from "@/lib/image-provider-types";
@@ -42,6 +44,7 @@ type Body = {
   title?: unknown;
   userNote?: unknown;
   variants?: unknown;
+  aspect?: unknown;
   prompt?: unknown;
   overlayText?: unknown;
   zone?: unknown;
@@ -67,6 +70,10 @@ export async function GET(req: Request) {
           ...latest,
           referenceIds: safeParseArray(latest.reference_ids),
           variants: listThumbnailVariants(latest.id),
+          // A remix exists to be judged against the cover that actually
+          // shipped, so the original travels with the run instead of the
+          // user having to go and find it on the Videos tab.
+          compareWith: remixOriginal(latest.source_kind, latest.source_id),
         }
       : null,
     hasProvider: !!getActiveImageProvider(),
@@ -75,6 +82,26 @@ export async function GET(req: Request) {
     // for real covers.
     dryRun: isDryRun(),
   });
+}
+
+/**
+ * The published video a remix run was based on. Null for every other
+ * source kind, and for a video that has since been removed from the
+ * local database.
+ */
+function remixOriginal(
+  sourceKind: string,
+  sourceId: string | null
+): { videoId: string; title: string; thumbnailUrl: string | null; views: number | null } | null {
+  if (sourceKind !== "video_remix" || !sourceId) return null;
+  const video = getVideo(sourceId);
+  if (!video) return null;
+  return {
+    videoId: video.id,
+    title: video.title,
+    thumbnailUrl: video.thumbnail_url ?? null,
+    views: video.views ?? null,
+  };
 }
 
 function safeParseArray(s: string | null): string[] {
@@ -122,6 +149,7 @@ export async function POST(req: Request) {
       : "manual";
 
   const variants = clampInt(body.variants, DEFAULT_VARIANTS, 1, MAX_VARIANTS);
+  const aspect = coerceAspect(body.aspect);
 
   const key = jobKey(THUMBNAIL_GEN_JOB, channelId);
   if (isJobRunning(key)) {
@@ -137,6 +165,7 @@ export async function POST(req: Request) {
     provider: pre.providerRow.provider,
     model: pre.providerRow.model,
     variants,
+    aspect,
     title,
   });
 
@@ -157,6 +186,7 @@ export async function POST(req: Request) {
             : null,
         userNote: typeof body.userNote === "string" ? body.userNote : null,
         variants,
+        aspect,
         reusePrompt: typeof body.prompt === "string" ? body.prompt : null,
         overlayText:
           typeof body.overlayText === "string" ? body.overlayText : null,

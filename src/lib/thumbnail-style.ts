@@ -17,6 +17,7 @@ import {
   type ProviderChoice,
 } from "./ai-provider-types";
 import { costMillicents } from "./claude-pricing";
+import { DEFAULT_ASPECT, type AspectChoice } from "./image-provider-types";
 import { log } from "./logger";
 import { coerceZone, type TextZone } from "./thumbnail-overlay";
 import { dryRunProfile, dryRunPrompt, isDryRun } from "./thumbnail-dryrun";
@@ -486,7 +487,6 @@ Critical constraints:
 - The image model must DERIVE the visual grammar from the reference images it is given. It must NOT reproduce any single reference's subject, layout or specific scene. Say this explicitly in the prompt.
 - The image must contain NO TEXT, NO LETTERING, NO WATERMARKS and no logos. The headline is added later by a separate renderer. State this in the prompt.
 - Leave the headline zone visually calm — no busy detail there — so overlaid text stays readable.
-- Aspect ratio is 16:9, and the composition must survive being viewed at 210x118 pixels.
 - Write the headline candidates in the SAME LANGUAGE as the video title you are given. Never translate it to English.
 
 Return ONLY a JSON object, no prose and no code fence:
@@ -499,10 +499,25 @@ Return ONLY a JSON object, no prose and no code fence:
 
 "prompt" is one paragraph, concrete and visual. "overlayCandidates" are three headline options for the thumbnail, each within the channel's observed word-count band — punchy, not a restatement of the full title. "zone" is where the headline should sit.`;
 
+/**
+ * The frame constraint the prompt has to carry. A Shorts cover is not a
+ * cropped video cover: the subject has to be readable in a tall frame on
+ * a phone, and the same style profile has to be re-composed for it
+ * rather than reproduced.
+ */
+const ASPECT_INSTRUCTIONS: Record<AspectChoice, string> = {
+  "16:9":
+    "- Aspect ratio is 16:9 (landscape), and the composition must survive being viewed at 210x118 pixels.",
+  "9:16":
+    "- Aspect ratio is 9:16 (tall vertical, a YouTube Shorts cover), and the composition must survive being viewed at 118x210 pixels on a phone. Re-compose the channel's visual grammar for a tall frame: a single subject stacked centrally with generous headroom, not a landscape scene cropped.",
+};
+
 export async function buildGenerationPlan(input: {
   analyser: AnalysisProvider;
   profile: ThumbnailStyleProfile;
   title: string;
+  /** Defaults to 16:9 when the caller doesn't care. */
+  aspect?: AspectChoice;
   userNote?: string | null;
   brandAssetDescriptions: string[];
   headlineZone?: TextZone;
@@ -539,7 +554,10 @@ ${brandLine}
 ${textLine}
 ${input.userNote ? `\nThe channel owner adds: ${input.userNote}` : ""}
 
-${PROMPT_INSTRUCTIONS}`,
+${PROMPT_INSTRUCTIONS}
+
+Frame constraint for this run:
+${ASPECT_INSTRUCTIONS[input.aspect ?? DEFAULT_ASPECT]}`,
   });
   const parsed = parseJsonObject(raw);
 
@@ -551,7 +569,7 @@ ${PROMPT_INSTRUCTIONS}`,
     prompt:
       typeof parsed.prompt === "string" && parsed.prompt.trim()
         ? parsed.prompt.trim()
-        : fallbackPrompt(input.profile, input.title),
+        : fallbackPrompt(input.profile, input.title, input.aspect ?? DEFAULT_ASPECT),
     // Falling back to the raw title is better than an empty headline —
     // the user can edit it for free, and a blank cover is useless.
     overlayCandidates: candidates.length ? candidates : [input.title],
@@ -562,10 +580,13 @@ ${PROMPT_INSTRUCTIONS}`,
 /** Used only when the model returns an unusable prompt field. */
 function fallbackPrompt(
   profile: ThumbnailStyleProfile,
-  title: string
+  title: string,
+  aspect: AspectChoice
 ): string {
   return [
-    `A 16:9 YouTube thumbnail background for a video titled "${title}".`,
+    aspect === "9:16"
+      ? `A 9:16 vertical YouTube Shorts cover background for a video titled "${title}".`
+      : `A 16:9 YouTube thumbnail background for a video titled "${title}".`,
     profile.composition.summary,
     profile.palette.summary,
     profile.subject.summary,

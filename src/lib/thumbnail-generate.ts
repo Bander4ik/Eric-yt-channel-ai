@@ -22,7 +22,12 @@ import {
   type ImageUsage,
   type ReferenceImage,
 } from "./image-provider";
-import { isImageProviderChoice, type ImageProviderChoice } from "./image-provider-types";
+import {
+  DEFAULT_ASPECT,
+  isImageProviderChoice,
+  type AspectChoice,
+  type ImageProviderChoice,
+} from "./image-provider-types";
 import { measuredRunCostCents } from "./thumbnail-pricing";
 import {
   coerceZone,
@@ -58,6 +63,8 @@ export type RunGenerationInput = {
   sourceId?: string | null;
   userNote?: string | null;
   variants: number;
+  /** 16:9 long-form cover (default) or 9:16 for Shorts. */
+  aspect?: AspectChoice;
   /** Supplied when re-running an edited prompt — skips the planning call. */
   reusePrompt?: string | null;
   overlayText?: string | null;
@@ -94,6 +101,7 @@ export async function runGeneration(
   const provider: ImageProviderChoice = isImageProviderChoice(providerRow.provider)
     ? providerRow.provider
     : "gemini";
+  const aspect: AspectChoice = input.aspect ?? DEFAULT_ASPECT;
   const report = input.onProgress ?? (() => {});
 
   const refs = await collectReferenceThumbnails(channelId);
@@ -150,6 +158,7 @@ export async function runGeneration(
         analyser: input.analyser,
         profile,
         title,
+        aspect,
         userNote: input.userNote ?? null,
         brandAssetDescriptions: assets.map(
           (a) => `${a.kind}${a.label ? ` (${a.label})` : ""}`
@@ -169,6 +178,7 @@ export async function runGeneration(
     provider,
     model: providerRow.model ?? "",
     variants,
+    aspect,
     referenceIds: [
       ...refs.own.map((r) => r.videoId),
       ...refs.competitor.map((r) => r.videoId),
@@ -188,6 +198,7 @@ export async function runGeneration(
     ...DEFAULT_OVERLAY,
     text: headline,
     zone: plan.zone,
+    aspect,
     uppercase: profile.textTreatment.uppercase,
     stroke: profile.textTreatment.stroke,
     shadow: profile.textTreatment.shadow,
@@ -208,6 +219,10 @@ export async function runGeneration(
         styleRefs,
         characterRefs,
         count: 1,
+        aspect,
+        // One image per call, so the provider has to be told which
+        // variant this is or every one of them gets the same prompt.
+        variantIndex: i,
       });
       const image = images[0];
       usages.push(image.usage);
