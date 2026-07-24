@@ -564,8 +564,42 @@ Verified by running it, in dry run on a real synced channel:
 | Batch and remix | both carry the chosen aspect into the run row |
 | Remix comparison | renders the shipped cover with its view count above the generated set |
 
-**Still not built:** nothing from the brief. The only open item is the
-first run against live keys.
+**Still not built:** nothing from the brief.
+
+### First real generations — kie.ai, 2026-07-24
+
+The image half is no longer "documented, not working". Three covers were
+generated on the product owner's kie.ai key, on a real channel
+(RED SIDE, 138 videos synced, 68 winners above its median).
+
+The text half still had no key, so the operator stood in for it: the
+eight top winners were downloaded and looked at by hand, and the style
+profile was written from what they actually share — hazy photoreal 3D,
+a size progression across the frame, a real landmark left in shot for
+scale, muted palette with one accent, 2–3 uppercase words top-left. That
+profile is stored with `model = "manual-operator-profile (no app key
+present)"` so it can never be mistaken for something the app produced,
+and its caveats say the same in the UI. The prompt was written the same
+way and passed through the existing "re-run with this prompt" path,
+which skips the planner. **What this verifies is the image pipeline, not
+the app's own Claude/Gemini call — that one still needs a key.**
+
+Results: a 16:9 cover and a 9:16 Shorts cover, both recognisably in the
+channel's grammar, headline composited in the profile's zone, Cyrillic
+re-render on top of a live provider image. kie reported **18 credits per
+image**; it publishes no dollar rate for Nano Banana Pro, so that is what
+gets recorded and shown.
+
+Two more defects the live provider exposed, neither visible in dry run:
+
+| Defect | Effect | Fix |
+|---|---|---|
+| The kie adapter hardcoded `mimeType: "image/png"`, but Nano Banana Pro returns JPEG | Backgrounds were written as `0-base.png` containing JPEG bytes — a file whose name lies about its contents, handed to the user by the new Background download | Type sniffed from the magic bytes (fal now too), and the file named from what actually arrived |
+| Credits went to the log only | The one measured number for a run existed nowhere the user could see it, so the run read "no cost data" although the provider had reported something | `thumbnail_runs.credits` column, shown as "18 provider credits" in the result header and the history |
+
+Verified after the fixes: `0-base.jpg → 0-final.png`, the file route
+serves it as `image/jpeg`, and re-render plus text-layer export both work
+from a JPEG background.
 
 ## Appendix: Research Findings (2026-07-24)
 

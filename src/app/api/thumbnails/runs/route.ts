@@ -29,6 +29,7 @@ export async function GET(req: Request) {
     variants: run.variants,
     aspect: run.aspect,
     costCents: run.cost_cents,
+    credits: run.credits,
     createdAt: run.created_at,
     images: listThumbnailVariants(run.id),
   }));

@@ -121,10 +121,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
   try {
     const base = fs.readFileSync(path.join(DATA_DIR, variant.base_path));
     const composited = await renderOverlay(base, spec, fontAbs);
+    // The background keeps whatever extension the provider's format
+    // called for; the composite is always a PNG we drew ourselves.
     const finalRel =
       variant.final_path && variant.final_path !== variant.base_path
         ? variant.final_path
-        : variant.base_path.replace(/-base\.png$/, "-final.png");
+        : variant.base_path.replace(/-base\.[a-z0-9]+$/i, "-final.png");
     fs.writeFileSync(path.join(DATA_DIR, finalRel), composited);
     updateThumbnailVariantOverlay(variantId, finalRel, JSON.stringify(spec));
     return NextResponse.json({ variant: getThumbnailVariant(variantId) });

@@ -422,9 +422,10 @@ async function generateFal(
       imgRes.status
     );
   }
+  const falBytes = Buffer.from(await imgRes.arrayBuffer());
   return {
-    bytes: Buffer.from(await imgRes.arrayBuffer()),
-    mimeType: first.content_type ?? "image/png",
+    bytes: falBytes,
+    mimeType: sniffImageMime(falBytes, first.content_type ?? null),
     // fal bills per image and reports no token usage.
     usage: { images: 1 },
   };
@@ -572,9 +573,14 @@ async function generateKie(
         imgRes.status
       );
     }
+    const bytes = Buffer.from(await imgRes.arrayBuffer());
     return {
-      bytes: Buffer.from(await imgRes.arrayBuffer()),
-      mimeType: "image/png",
+      bytes,
+      // kie serves whatever the underlying model produced — Nano Banana
+      // Pro returns JPEG even when the request asks for png — so the type
+      // is read off the bytes rather than assumed. Claiming png for a
+      // JPEG would write a file whose name lies about its contents.
+      mimeType: sniffImageMime(bytes, imgRes.headers.get("content-type")),
       usage: {
         images: 1,
         credits: poll.data?.creditsConsumed,
@@ -584,6 +590,30 @@ async function generateKie(
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The image type, taken from the bytes themselves and only falling back
+ * to what the server claimed. Providers are casual about this: a request
+ * for png can come back as JPEG with a png content-type, and the caller
+ * names the file from whatever we return here.
+ */
+function sniffImageMime(bytes: Buffer, headerValue: string | null): string {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") {
+    return "image/png";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  const header = headerValue?.split(";")[0]?.trim();
+  return header && header.startsWith("image/") ? header : "image/png";
+}
 
 /**
  * Provider error bodies can be enormous and occasionally echo the request

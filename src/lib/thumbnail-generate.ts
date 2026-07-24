@@ -8,6 +8,7 @@ import {
   getChannelFontPath,
   listBrandAssets,
   setThumbnailRunCost,
+  setThumbnailRunCredits,
   type ImageProviderRow,
 } from "./db";
 import {
@@ -227,7 +228,15 @@ export async function runGeneration(
       const image = images[0];
       usages.push(image.usage);
 
-      const baseRel = relPath(channelId, runId, `${i}-base.png`);
+      // Providers return whatever format they like — kie hands back JPEG.
+      // Writing that into a .png would hand the user a file whose name
+      // lies about its contents, which matters the moment they open the
+      // background layer in an editor.
+      const baseRel = relPath(
+        channelId,
+        runId,
+        `${i}-base${extensionFor(image.mimeType)}`
+      );
       fs.writeFileSync(path.join(DATA_DIR, baseRel), image.bytes);
 
       let finalRel: string;
@@ -271,10 +280,12 @@ export async function runGeneration(
   if (costCents !== null) setThumbnailRunCost(runId, costCents);
 
   // kie.ai reports credits rather than money and publishes no rate for
-  // every model, so when we can't turn them into a cost we at least put
-  // the number somewhere the user can find it.
+  // every model. Credits are what the provider actually measured, so they
+  // are recorded and shown; turning them into dollars would mean invented
+  // a rate, which is the one thing the cost column must never contain.
   const credits = usages.reduce((sum, u) => sum + (u?.credits ?? 0), 0);
-  if (credits > 0 && costCents === null) {
+  if (credits > 0) {
+    setThumbnailRunCredits(runId, credits);
     log.info("thumbnails", "Run billed in provider credits", {
       runId,
       provider,
@@ -301,6 +312,14 @@ function relPath(channelId: string, runId: number, file: string): string {
     String(runId),
     file
   );
+}
+
+/** File extension for what the provider actually sent back. */
+function extensionFor(mimeType: string): string {
+  const mime = mimeType.toLowerCase();
+  if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg";
+  if (mime.includes("webp")) return ".webp";
+  return ".png";
 }
 
 function mimeFromPath(p: string): string {

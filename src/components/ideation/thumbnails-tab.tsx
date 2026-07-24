@@ -127,6 +127,7 @@ type Run = {
   variants: number;
   aspect?: string;
   cost_cents: number | null;
+  credits?: number | null;
   referenceIds: string[];
   variantsList?: Variant[];
   /** Set for remix runs: the cover that actually shipped. */
@@ -184,6 +185,7 @@ type HistoryRun = {
   variants: number;
   aspect?: string;
   costCents: number | null;
+  credits?: number | null;
   createdAt: number;
   images: Variant[];
 };
@@ -207,6 +209,24 @@ function fmtCompact(n: number): string {
 
 function fmtCents(c: number): string {
   return c < 1 ? "<$0.01" : `$${(c / 100).toFixed(2)}`;
+}
+
+/**
+ * What a run cost, in whatever unit the provider actually reported.
+ *
+ * Money when we have it, the provider's own credits when that is all it
+ * gave us (kie bills that way and publishes no per-image rate), and a
+ * plain admission otherwise. Never a converted guess.
+ */
+function runSpend(run: {
+  cost_cents?: number | null;
+  costCents?: number | null;
+  credits?: number | null;
+}): string {
+  const cents = run.cost_cents ?? run.costCents ?? null;
+  if (cents !== null) return `cost ${fmtCents(cents)}`;
+  if (run.credits) return `${run.credits} provider credits`;
+  return "no cost data reported by the provider";
 }
 
 export function ThumbnailsTab() {
@@ -818,7 +838,11 @@ function HistoryPanel({
                   </div>
                 </div>
                 <span className="text-muted-foreground">
-                  {r.costCents !== null ? fmtCents(r.costCents) : "no cost data"}
+                  {r.costCents !== null
+                    ? fmtCents(r.costCents)
+                    : r.credits
+                      ? `${r.credits} credits`
+                      : "no cost data"}
                 </span>
                 <button
                   type="button"
@@ -1354,11 +1378,7 @@ function ResultGrid({
               {run.aspect === "9:16" ? "9:16 Shorts" : "16:9"}
             </span>
           </div>
-          <div className="text-xs text-muted-foreground">
-            {run.cost_cents !== null
-              ? `cost ${fmtCents(run.cost_cents)}`
-              : "no cost data reported by the provider"}
-          </div>
+          <div className="text-xs text-muted-foreground">{runSpend(run)}</div>
         </div>
 
         {run.compareWith && <RemixComparison original={run.compareWith} />}

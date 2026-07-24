@@ -5485,6 +5485,14 @@ try {
       `ALTER TABLE thumbnail_runs ADD COLUMN aspect TEXT NOT NULL DEFAULT '16:9'`
     );
   }
+  // Some providers bill in their own credits rather than money and
+  // publish no per-image rate -- kie.ai's Nano Banana Pro reported 18
+  // credits for one image on the first real run. That number is the only
+  // honest thing we can show for those runs, so it gets a column instead
+  // of living in the log where nobody looks.
+  if (!runCols.includes("credits")) {
+    db.exec(`ALTER TABLE thumbnail_runs ADD COLUMN credits INTEGER`);
+  }
 } catch {
   /* noop -- table may not exist yet on a brand-new DB */
 }
@@ -5867,6 +5875,8 @@ export type ThumbnailRunRow = {
   reference_ids: string | null;
   /** '16:9' or '9:16'. Older rows predate Shorts support and are 16:9. */
   aspect: string;
+  /** Provider credits consumed, when the provider bills that way. */
+  credits: number | null;
   created_at: number;
 };
 
@@ -5921,6 +5931,19 @@ export function createThumbnailRun(input: {
 export function setThumbnailRunCost(runId: number, costCents: number): void {
   db.prepare(`UPDATE thumbnail_runs SET cost_cents = ? WHERE id = ?`).run(
     Math.round(costCents),
+    runId
+  );
+}
+
+/**
+ * Credits a provider reported for a run. Kept separate from cost_cents
+ * because credits are not money until the user's own rate is known --
+ * showing "18 credits" is honest, converting it to dollars we guessed
+ * would not be.
+ */
+export function setThumbnailRunCredits(runId: number, credits: number): void {
+  db.prepare(`UPDATE thumbnail_runs SET credits = ? WHERE id = ?`).run(
+    Math.round(credits),
     runId
   );
 }
