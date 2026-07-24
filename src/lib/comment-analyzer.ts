@@ -27,7 +27,7 @@ import { log } from "./logger";
  * Cached one-per-video; re-analyse overwrites previous row.
  */
 
-const ANALYZER_MODEL = "claude-sonnet-4-6";
+const ANALYZER_MODEL = "claude-sonnet-5";
 
 const SYSTEM_PROMPT = `You are an audience analyst for a YouTube creator. Given the top comments on one of their videos, produce a structured JSON breakdown that captures sentiment, recurring themes, credibility pushback, demand signals for future videos, and the best raw-material hooks the creator could lift directly out of the comment stream.
 
@@ -293,3 +293,4 @@ export async function analyzeVideoComments(
     sentimentScore: parsed.sentiment_score,
   };
 }
+

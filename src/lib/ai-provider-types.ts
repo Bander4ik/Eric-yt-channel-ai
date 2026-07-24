@@ -21,11 +21,13 @@ export type ProviderChoice =
   | "gemini-2.5-pro"
   | "gemini-3-flash"
   | "gemini-3-pro"
+  | "gemini-3.1-flash-lite"
   | "gemini-3.1-flash"
   | "gemini-3.1-pro";
 
 export const PROVIDER_CHOICES: ProviderChoice[] = [
   "claude",
+  "gemini-3.1-flash-lite",
   "gemini-2.5-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.5-pro",
@@ -38,6 +40,18 @@ export const PROVIDER_CHOICES: ProviderChoice[] = [
 export const DEFAULT_PROVIDER: ProviderChoice = "claude";
 
 /**
+ * What a Gemini user gets when they don't pick a model themselves.
+ *
+ * Kept next to DEFAULT_PROVIDER because the two answer the same
+ * question from either side of the key the user happens to hold: an
+ * Anthropic key means Sonnet 5, a Google key means Gemini 3.1
+ * Flash-Lite. Anything that resolves a model from "which key is
+ * configured" should read these two constants rather than hardcoding an
+ * id, so the defaults move in one place.
+ */
+export const DEFAULT_GEMINI_PROVIDER: ProviderChoice = "gemini-3.1-flash-lite";
+
+/**
  * Display label for the model picker. We keep "(latest)" / "(legacy)"
  * tags off the labels because Google ships new generations every couple
  * of months — re-labelling forever is busywork. Users learn fast that
@@ -46,7 +60,7 @@ export const DEFAULT_PROVIDER: ProviderChoice = "claude";
 export function providerLabel(p: ProviderChoice): string {
   switch (p) {
     case "claude":
-      return "Claude Sonnet 4.6";
+      return "Claude Sonnet 5";
     case "gemini-2.5-flash-lite":
       return "Gemini 2.5 Flash-Lite";
     case "gemini-2.5-flash":
@@ -57,6 +71,8 @@ export function providerLabel(p: ProviderChoice): string {
       return "Gemini 3 Flash";
     case "gemini-3-pro":
       return "Gemini 3 Pro";
+    case "gemini-3.1-flash-lite":
+      return "Gemini 3.1 Flash-Lite";
     case "gemini-3.1-flash":
       return "Gemini 3.1 Flash";
     case "gemini-3.1-pro":
@@ -78,6 +94,6 @@ export function providerIntegrationName(
  * table to drift out of sync.
  */
 export function providerModelId(p: ProviderChoice): string {
-  if (p === "claude") return "claude-sonnet-4-6";
+  if (p === "claude") return "claude-sonnet-5";
   return p; // every gemini-* enum value matches the SDK's model id verbatim
 }

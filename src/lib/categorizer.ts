@@ -29,7 +29,7 @@ import { log } from "./logger";
  *   coverage for a content-bucket overview, not a full historical audit.
  */
 
-const CATEGORIZER_MODEL = "claude-sonnet-4-6";
+const CATEGORIZER_MODEL = "claude-sonnet-5";
 const VIDEO_CAP = 200;
 const MAX_TAGS_PER_VIDEO = 5;
 
@@ -208,3 +208,4 @@ export async function categorizeChannelVideos(
 
   return { categories: parsed.categories, assigned, skipped };
 }
+

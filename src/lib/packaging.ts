@@ -90,7 +90,7 @@ export type PackageRow = {
   multiplier: number;
 };
 
-const ANALYZER_MODEL = "claude-sonnet-4-6";
+const ANALYZER_MODEL = "claude-sonnet-5";
 
 const FORMULA_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -697,3 +697,4 @@ export async function packagingFormulaSummary(
   setSetting(cacheKey, JSON.stringify(entry));
   return text;
 }
+

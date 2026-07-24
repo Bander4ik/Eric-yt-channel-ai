@@ -34,6 +34,7 @@ import {
  */
 
 export {
+  DEFAULT_GEMINI_PROVIDER,
   DEFAULT_PROVIDER,
   PROVIDER_CHOICES,
   providerIntegrationName,

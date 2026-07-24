@@ -1271,7 +1271,7 @@ export function buildSystemPrompt(
   // Build the full prompt. It's intentionally long (~6-8k tokens) because
   // we trade prompt size for the model knowing exactly what arsenal it
   // has, what platform it's embedded in, and how to behave when data is
-  // missing. Anthropic auto-caches the system block on Sonnet 4.6 so
+  // missing. Anthropic auto-caches the system block so
   // repeated turns in the same session don't pay for it twice.
   const lines: string[] = [];
 
@@ -1571,3 +1571,4 @@ export function buildSystemPrompt(
 
   return lines.join("\n");
 }
+

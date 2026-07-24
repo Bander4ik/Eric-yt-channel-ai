@@ -8,6 +8,7 @@ import {
   upsertVideoHook,
 } from "./db";
 import {
+  DEFAULT_GEMINI_PROVIDER,
   providerIntegrationName,
   providerLabel,
   providerModelId,
@@ -183,7 +184,7 @@ function validateOutput(parsed: unknown): AnalyzerOutput {
  *   - If the user passed an explicit provider, honor it (but bail
  *     if its API key isn't configured).
  *   - Otherwise prefer Claude when its key exists (the original
- *     behaviour pre-Gemini), fall back to Gemini 2.5 Pro when only
+ *     behaviour pre-Gemini), fall back to the default Gemini model when only
  *     Gemini is configured. The user can flip the explicit picker
  *     in the Hook Lab header to override.
  *
@@ -201,7 +202,7 @@ function resolveProvider(
   const claudeKey = getIntegration("claude")?.api_key;
   if (claudeKey) return { provider: "claude", apiKey: claudeKey };
   const geminiKey = getIntegration("google_gemini")?.api_key;
-  if (geminiKey) return { provider: "gemini-2.5-pro", apiKey: geminiKey };
+  if (geminiKey) return { provider: DEFAULT_GEMINI_PROVIDER, apiKey: geminiKey };
   return null;
 }
 
@@ -212,7 +213,7 @@ function resolveProvider(
  * sanity-check a previous low score).
  *
  *   provider — optional ProviderChoice. When omitted, picks Claude if
- *   its key is configured, else Gemini 2.5 Pro. The batch endpoint
+ *   its key is configured, else the default Gemini model. The batch endpoint
  *   threads the user's pick from the Hook Lab UI through here.
  */
 export async function analyzeVideoHook(
@@ -344,3 +345,4 @@ export async function analyzeVideoHook(
 
   return { ok: true, overallScore };
 }
+

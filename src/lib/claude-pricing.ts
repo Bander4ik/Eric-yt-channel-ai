@@ -21,12 +21,30 @@ type ModelRates = {
 };
 
 const RATES: Record<string, ModelRates> = {
-  // Claude Sonnet 4.6 — executor model (our default for chat turns)
+  // Claude Sonnet 5 — executor model (our default for every Claude call).
+  // List price is $3/$15 per M; Anthropic is running an introductory
+  // $2/$10 through 2026-08-31. We bill at list so the counter never
+  // under-reports what the user will actually owe once that ends.
+  "claude-sonnet-5": {
+    input: 3.0,
+    output: 15.0,
+    cacheWrite: 3.75,
+    cacheRead: 0.3,
+  },
+  // Claude Sonnet 4.6 — previous default, kept so historical usage rows
+  // still price correctly.
   "claude-sonnet-4-6": {
     input: 3.0,
     output: 15.0,
     cacheWrite: 3.75,
     cacheRead: 0.3,
+  },
+  // Claude Opus 4.8 — top tier, same rates as 4.7.
+  "claude-opus-4-8": {
+    input: 5.0,
+    output: 25.0,
+    cacheWrite: 6.25,
+    cacheRead: 0.5,
   },
   // Claude Opus 4.7 — advisor model
   "claude-opus-4-7": {
@@ -46,7 +64,7 @@ const RATES: Record<string, ModelRates> = {
 
 /** Fallback for unknown models — use Sonnet rates so we over-estimate
  * slightly rather than accidentally hide spend. */
-const FALLBACK = RATES["claude-sonnet-4-6"];
+const FALLBACK = RATES["claude-sonnet-5"];
 
 /**
  * Cost in millicents (1/1000 of a cent) for a single model call.

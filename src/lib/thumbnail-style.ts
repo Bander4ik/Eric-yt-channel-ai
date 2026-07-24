@@ -11,7 +11,11 @@ import {
   type ThumbnailWinner,
 } from "./db";
 import { streamTurn, type UnifiedUsage } from "./ai-provider";
-import { providerModelId, type ProviderChoice } from "./ai-provider-types";
+import {
+  DEFAULT_GEMINI_PROVIDER,
+  providerModelId,
+  type ProviderChoice,
+} from "./ai-provider-types";
 import { costMillicents } from "./claude-pricing";
 import { log } from "./logger";
 import { coerceZone, type TextZone } from "./thumbnail-overlay";
@@ -54,10 +58,9 @@ import { dryRunProfile, dryRunPrompt, isDryRun } from "./thumbnail-dryrun";
  * Selection is by which key is present, Claude first because its vision
  * output has been the more literal of the two in this codebase's
  * experience with thumbnail OCR. A user with both keys can flip the
- * order by clearing one.
+ * order by clearing one. Which model each side resolves to lives in
+ * `ai-provider-types.ts` — don't hardcode an id here.
  */
-const DEFAULT_GEMINI_ANALYZER: ProviderChoice = "gemini-2.5-flash";
-
 export type AnalysisProvider = {
   provider: ProviderChoice;
   apiKey: string;
@@ -77,9 +80,9 @@ export function resolveAnalysisProvider(): AnalysisProvider | null {
   const geminiKey = getIntegration("google_gemini")?.api_key;
   if (geminiKey) {
     return {
-      provider: DEFAULT_GEMINI_ANALYZER,
+      provider: DEFAULT_GEMINI_PROVIDER,
       apiKey: geminiKey,
-      model: providerModelId(DEFAULT_GEMINI_ANALYZER),
+      model: providerModelId(DEFAULT_GEMINI_PROVIDER),
     };
   }
   return null;

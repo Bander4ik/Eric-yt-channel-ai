@@ -27,8 +27,11 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// Output budget per model call. 8192 is the comfortable Sonnet 4.6 ceiling
-// without enabling extended thinking; Gemini 2.5 Flash/Pro accept it too.
+// Output budget per model call. Comfortable on both defaults — Sonnet 5
+// and Gemini 3.1 Flash-Lite — and low enough that a non-streaming call
+// can't hit the SDK's HTTP timeout. Sonnet 5 runs adaptive thinking by
+// default, and thinking counts against this budget, so leave headroom
+// here rather than trimming it.
 const MAX_TOKENS = 8192;
 // Forced-synthesis round gets a bigger budget because it has to emit the
 // whole structured report in one go — no more rounds to spread across.

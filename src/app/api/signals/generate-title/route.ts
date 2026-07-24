@@ -10,7 +10,7 @@ import { packagingFormulaSummary } from "@/lib/packaging";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ANALYZER_MODEL = "claude-sonnet-4-6";
+const ANALYZER_MODEL = "claude-sonnet-5";
 
 const SIGNAL_TYPES = ["gap", "fresh_outlier", "audience"] as const;
 type SignalType = (typeof SIGNAL_TYPES)[number];
@@ -182,3 +182,4 @@ function parseVariants(raw: string): Variant[] | null {
   if (variants.length === 0 || variants.length > 3) return null;
   return variants;
 }
+

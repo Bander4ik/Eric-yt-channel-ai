@@ -12,7 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
  * alongside titles and descriptions.
  */
 
-const OCR_MODEL = "claude-sonnet-4-6";
+const OCR_MODEL = "claude-sonnet-5";
 
 const OCR_PROMPT =
   "Extract ONLY the text overlaid/printed on this YouTube thumbnail image. " +
@@ -93,3 +93,4 @@ export async function ocrThumbnail(
   if (trimmed.toUpperCase() === "NONE") return "";
   return trimmed.replace(/\s*\n+\s*/g, " / ");
 }
+
