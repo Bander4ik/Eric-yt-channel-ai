@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eric YT Channel AI — контекст проекту і задача</title>
+<style>
+  :root{
+    --paper:#F7F8F9; --surface:#FFFFFF; --ink:#16181D; --muted:#5A6270;
+    --line:#E3E6EA; --accent:#C6473E; --accent-ink:#FFFFFF; --ok:#2F6B4F;
+    --chip:#EEF0F2; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#14161A; --surface:#1C1F25; --ink:#E9EBEE; --muted:#9AA3AF;
+      --line:#2A2E36; --accent:#E06A5E; --accent-ink:#1A0F0D; --ok:#6FBF97; --chip:#242830; }
+  }
+  :root[data-theme="dark"]{ --paper:#14161A; --surface:#1C1F25; --ink:#E9EBEE; --muted:#9AA3AF;
+    --line:#2A2E36; --accent:#E06A5E; --accent-ink:#1A0F0D; --ok:#6FBF97; --chip:#242830; }
+  :root[data-theme="light"]{ --paper:#F7F8F9; --surface:#FFFFFF; --ink:#16181D; --muted:#5A6270;
+    --line:#E3E6EA; --accent:#C6473E; --accent-ink:#FFFFFF; --ok:#2F6B4F; --chip:#EEF0F2; }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.7;margin:0;}
+  .wrap{max-width:900px;margin:0 auto;padding:0 20px 80px;}
+  h1,h2,h3{line-height:1.25;text-wrap:balance;font-weight:750;letter-spacing:-.01em}
+  h1{font-size:34px;margin:.2em 0 .3em}
+  h2{font-size:24px;margin:2.6em 0 .6em;padding-top:.6em}
+  h3{font-size:17px;margin:1.6em 0 .5em}
+  p{margin:.6em 0}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.86em;background:var(--chip);
+    padding:.12em .4em;border-radius:5px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted)}
+  .lede{font-size:18px;color:var(--muted);max-width:64ch}
+
+  nav{position:sticky;top:0;z-index:20;background:var(--paper);
+    border-bottom:1px solid var(--line);margin:0 -20px;padding:10px 20px;
+    display:flex;gap:8px;flex-wrap:wrap}
+  nav a{font-family:var(--mono);font-size:12.5px;color:var(--muted);
+    padding:6px 12px;border-radius:999px;border:1px solid transparent}
+  nav a.on{color:var(--ink);border-color:var(--line);background:var(--surface)}
+  nav a:hover{text-decoration:none;color:var(--ink)}
+
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0 6px}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:10px 16px;min-width:120px}
+  .stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+  .stat span{font-size:12.5px;color:var(--muted)}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr}}
+
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 0}
+  .tabs button{font:inherit;font-size:14px;font-weight:600;cursor:pointer;
+    padding:8px 16px;border-radius:999px;border:1px solid var(--line);
+    background:var(--surface);color:var(--muted)}
+  .tabs button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .tabpane{display:none;margin-top:0}
+  .tabpane.on{display:block}
+  .tabpane .card{border-top-left-radius:0}
+
+  .tl{list-style:none;margin:18px 0;padding:0;border-left:2px solid var(--line)}
+  .tl li{position:relative;padding:0 0 6px 22px;margin:0 0 10px}
+  .tl li::before{content:"";position:absolute;left:-6px;top:9px;width:10px;height:10px;
+    border-radius:50%;background:var(--line)}
+  .tl li.major::before{background:var(--accent)}
+  .tl .h{cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .tl .h:hover .t{text-decoration:underline}
+  .tl .hash{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .tl .d{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .tl .t{font-weight:650}
+  .tl .x{display:none;color:var(--muted);font-size:14.5px;max-width:66ch;margin-top:4px}
+  .tl li.open .x{display:block}
+
+  ul.tight{margin:.4em 0;padding-left:1.2em}
+  ul.tight li{margin:.3em 0}
+
+  .note{border:1px solid var(--line);border-radius:12px;background:var(--chip);
+    padding:12px 16px;font-size:14.5px;color:var(--muted)}
+
+  .taskband{background:var(--accent);color:var(--accent-ink);border-radius:14px;
+    padding:26px 26px 22px;margin:44px 0 18px}
+  .taskband .eyebrow{color:var(--accent-ink);opacity:.75}
+  .taskband h2{margin:6px 0 8px;padding:0;color:var(--accent-ink)}
+  .taskband p{max-width:66ch;margin:.4em 0 0}
+
+  .flow{display:flex;gap:0;align-items:stretch;flex-wrap:wrap;margin:14px 0}
+  .flow .step{flex:1 1 150px;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;margin:4px;min-width:150px}
+  .flow .step b{display:block;font-size:14px}
+  .flow .step span{font-size:13px;color:var(--muted)}
+  .flow .step i{font-style:normal;font-family:var(--mono);font-size:11px;
+    color:var(--accent);letter-spacing:.1em}
+
+  .check{list-style:none;padding:0;margin:10px 0}
+  .check li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;
+    border-bottom:1px dashed var(--line);cursor:pointer}
+  .check li:last-child{border-bottom:none}
+  .check .box{flex:none;width:20px;height:20px;border:2px solid var(--muted);
+    border-radius:6px;margin-top:3px;display:grid;place-items:center;
+    font-size:13px;color:transparent}
+  .check li.done .box{background:var(--ok);border-color:var(--ok);color:#fff}
+  .check li.done .txt{color:var(--muted)}
+
+  .diagram{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:16px;overflow-x:auto;margin:14px 0}
+  .diagram .row{display:flex;gap:10px;align-items:stretch;justify-content:center;flex-wrap:wrap}
+  .diagram .b{background:var(--chip);border:1px solid var(--line);border-radius:10px;
+    padding:8px 12px;font-size:13px;text-align:center;min-width:120px}
+  .diagram .b b{display:block;font-size:13px}
+  .diagram .b span{font-size:11.5px;color:var(--muted)}
+  .diagram .arrow{text-align:center;color:var(--muted);font-size:20px;margin:2px 0}
+  .diagram .db{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .diagram .db span{color:var(--paper);opacity:.7}
+
+  .pill-ok{display:inline-block;background:var(--chip);border-radius:999px;
+    padding:2px 10px;font-size:12.5px;font-family:var(--mono);color:var(--ok)}
+  footer{margin-top:60px;padding-top:16px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:13.5px}
+  @media (prefers-reduced-motion: no-preference){ html{scroll-behavior:smooth} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow" style="margin-top:28px">YT-Wizards / Eric-yt-channel-ai · документ для розробника · липень 2026</p>
+  <h1>Eric YT Channel AI — що це, як влаштовано і що будуємо далі</h1>
+  <p class="lede">Локальна платформа аналітики YouTube-каналів з AI-ядром. Цей документ дає повний контекст:
+  що за продукт, як він працює зараз, як ми його дійшли — і внизу конкретна задача: <b style="color:var(--accent)">Генератор прев'юшок</b>.</p>
+
+  <div class="stats">
+    <div class="stat"><b>49</b><span>комітів у main</span></div>
+    <div class="stat"><b>176</b><span>файлів у src/</span></div>
+    <div class="stat"><b>4</b><span>вкладки Ideation-хабу</span></div>
+    <div class="stat"><b>44</b><span>інструменти AI-чату</span></div>
+  </div>
+
+  <nav id="nav">
+    <a href="#what" class="on">Що це</a>
+    <a href="#how">Як працює</a>
+    <a href="#history">Історія</a>
+    <a href="#rules">Принципи</a>
+    <a href="#task">Задача: прев'юшки</a>
+  </nav>
+
+  <h2 id="what">Що це за продукт</h2>
+  <p><b>Локальний застосунок</b> (Next.js 16 + SQLite, вся база — один файл <code>data/app.db</code> поруч із проектом),
+  який юзер запускає у себе. Він підключає свої YouTube-канали (скільки завгодно — усе працює
+  <b>по-канально</b>, перемикач угорі справа), вставляє власні API-ключі на сторінці Integrations
+  (YouTube Data API, Claude, опційно Google OAuth для Studio-метрик, Deepgram, Apify) — і отримує:</p>
+  <ul class="tight">
+    <li><b>аналітику</b> свого каналу (перегляди, утримання, трафік, коментарі, транскрипти);</li>
+    <li><b>розвідку конкурентів</b> (їхні відео, вірусні сплески, тематичні прогалини);</li>
+    <li><b>конвеєр ідей</b> — від сигналу «це зараз вибухає» до картки «опубліковано»;</li>
+    <li><b>AI-чат</b>, який бачить усі дані платформи і працює її «мозком».</li>
+  </ul>
+  <p>Продукт універсальний: жодної зашитої ніші. Категорії, формули й генерації виводяться
+  з даних конкретного каналу і його мовою. Користувач типовий — власник кількох faceless-каналів,
+  який хоче стандартизований цикл «сигнал → ідея → відео», керований однією людиною.</p>
+
+  <h2 id="how">Як воно працює зараз</h2>
+  <div class="diagram">
+    <div class="row">
+      <div class="b"><b>YouTube Data API</b><span>синк каналу і конкурентів</span></div>
+      <div class="b"><b>Claude (ключ юзера)</b><span>OCR мініатюр · категорії · коментарі</span></div>
+      <div class="b"><b>Користувач</b><span>теги · картки · ніші</span></div>
+    </div>
+    <div class="arrow">↓</div>
+    <div class="row"><div class="b db"><b>SQLite · app.db</b><span>відео · текст мініатюр · категорії · конкуренти · алерти · ідеї · ніші</span></div></div>
+    <div class="arrow">↓</div>
+    <div class="row">
+      <div class="b"><b>Board</b><span>канбан ідей</span></div>
+      <div class="b"><b>Videos</b><span>командна таблиця</span></div>
+      <div class="b"><b>Packaging</b><span>аналіз упаковки</span></div>
+      <div class="b"><b>Signals</b><span>стрічка сигналів</span></div>
+      <div class="b"><b>AI-чат</b><span>читає все, пише в Board</span></div>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="on" data-t="t1">Board</button>
+    <button data-t="t2">Videos</button>
+    <button data-t="t3">Packaging</button>
+    <button data-t="t4">Signals</button>
+  </div>
+  <div class="tabpane on" id="t1"><div class="card">
+    <b>Канбан виробництва відео:</b> idea → research → script → voiceover → editing → published.
+    Картки створюються руками, кнопкою «→ Ideas» з будь-якого сигналу, або самим AI-чатом.
+    Кожна пам'ятає своє джерело (прогалина / алерт конкурента / комент / чат), несе категорію і рівень попиту.
+    Перетягування мишею; позиції зберігаються в БД.
+  </div></div>
+  <div class="tabpane" id="t2"><div class="card">
+    <b>Командна таблиця всіх відео каналу:</b> мініатюра, OCR-текст мініатюри (Claude vision читає
+    картинку один раз і кешує), категорія (AI-кластеризація назв + ручне редагування + свої нові),
+    перегляди, VPH (перегляди/годину), значки 100K–1M, фільтри. Кнопки: Sync, Detect thumbnail text,
+    Auto-categorize (обидві — фонові джоби, переживають навігацію), Export CSV/JSON, лічильник квоти API.
+  </div></div>
+  <div class="tabpane" id="t3"><div class="card">
+    <b>Що в упаковці реально тягне:</b> топ-зв'язки «назва + текст мініатюри» з множником проти
+    середнього каналу; вплив фіч (число в назві, ціна на мініатюрі, довжина…) — тільки на зрілих
+    відео (≥14 днів) і вибірках ≥3 з кожного боку; успішність слів мініатюр; згорнута картка
+    «Winning formula» — AI-рецепт наступного відео, кожна цифра з (n=…), малі вибірки чесно
+    марковані «worth testing». Ця формула також живить генерацію назв у Signals.
+  </div></div>
+  <div class="tabpane" id="t4"><div class="card">
+    <b>Стрічка «що робити далі», три джерела + Niche Watch:</b>
+    свіжі сплески конкурентів («34K views in 4h» — детектор швидкості), тематичні прогалини
+    (слова з топ-відео конкурентів, яких нема у твоїх назвах), запити аудиторії (з AI-аналізу
+    коментарів), і <b>Niche Watch</b> — до 6 своїх ніш-запитів, скан YouTube за останні 7 днів
+    з ранжуванням по VPH. Кожен сигнал: «Generate title» (3 варіанти назви + текст мініатюри,
+    обґрунтовані формулою каналу) і «→ Ideas» на канбан.
+  </div></div>
+
+  <h3>Патерни, на яких усе тримається</h3>
+  <div class="grid2">
+    <div class="card"><b>Per-channel усюди.</b> Кожен запит скоуплений до активного каналу.
+      Конкуренти прив'язані до каналу через junction-таблицю (legacy-рядки без прив'язки видимі всім —
+      зворотна сумісність).</div>
+    <div class="card"><b>Живучі джоби.</b> Довгі операції (OCR, категоризація, синк конкурентів,
+      скан ніш) — fire-and-forget на сервері зі станом у settings: 409 на дубль-старт, 2h-staleness,
+      UI просто полить статус. Навігація/перезавантаження нічого не вбиває.</div>
+    <div class="card"><b>Чесна статистика.</b> Вся математика — детермінований SQL з живих цифр.
+      LLM тільки переказує її, зобов'язаний цитувати вибірки, і не має права робити правило з n&lt;5.</div>
+    <div class="card"><b>Ключі юзера, метрична квота.</b> Всі виклики YouTube API рахуються
+      в денний лічильник (search = 100 од.), видимий у UI. Claude-виклики — тільки за явною дією.</div>
+  </div>
+
+  <h2 id="history">Як ми сюди дійшли — ключові коміти</h2>
+  <p class="note">Клікни рядок, щоб розгорнути контекст. Повна історія — <code>git log</code> у репо
+  <a href="https://github.com/YT-Wizards/Eric-yt-channel-ai" target="_blank" rel="noreferrer">YT-Wizards/Eric-yt-channel-ai</a>.</p>
+  <ul class="tl" id="tl">
+    <li class="major"><div class="h"><span class="hash">f3dd6b0</span><span class="d">05.07</span><span class="t">Надійність AI-чату + мультиканальний синк</span></div>
+      <div class="x">47 підтверджених багів за один аудит: сервер став авторитетним щодо інструментів чату
+      («чат бачить усе, що бачить юзер» — тепер гарантія, а не обіцянка), чесні маркери обрізання даних,
+      фікс «Sync channel» який перемикав юзера на чужий канал.</div></li>
+    <li class="major"><div class="h"><span class="hash">21542db</span><span class="d">09.07</span><span class="t">Ideation-хаб: Board, Videos, Packaging, Signals</span></div>
+      <div class="x">Головна поставка: одна нова вкладка в сайдбарі з усім конвеєром ідей. OCR мініатюр,
+      AI-категорії, packaging-аналітика, канбан, сигнали з генерацією назв. ~1000 рядків, 14 нових файлів,
+      33 метрики звірені ручним перерахунком.</div></li>
+    <li><div class="h"><span class="hash">e078c3f</span><span class="d">09.07</span><span class="t">Фікс краху свіжих установок</span></div>
+      <div class="x">Turbopack дає модулям віртуальний __dirname — свіжий клон падав на створенні data/.
+      Фолбек на process.cwd(). Критично для клієнтських установок.</div></li>
+    <li><div class="h"><span class="hash">1da2b9d</span><span class="d">09.07</span><span class="t">Конкуренти по-канально + живучі джоби OCR/категорій</span></div>
+      <div class="x">Junction-таблиця competitor_owners (різні ніші юзера більше не змішуються),
+      і перший перехід довгих операцій на settings-джоби після багрепорту «працює тільки поки сидиш на вкладці».</div></li>
+    <li><div class="h"><span class="hash">43c8bd0</span><span class="d">10.07</span><span class="t">Алерти: дати виходу, freshness-сортування, видалення</span></div>
+      <div class="x">На кожному аутлаєрі видно вік відео, «proven hit» для старших 30 днів, ✕ і Clear read,
+      авто-чистка прочитаних 90+ днів, шумовий поріг 1000 переглядів.</div></li>
+    <li class="major"><div class="h"><span class="hash">0a3b19d</span><span class="d">10.07</span><span class="t">Статистично чесна формула</span></div>
+      <div class="x">Після того, як власник продукту зловив правило з вибіркою n=2: фільтр зрілості 14 днів,
+      правила тільки з n≥5, обов'язкові (n=…) і секція Data caveats. Кеш формул перегенеровано для всіх.</div></li>
+    <li><div class="h"><span class="hash">14272b9</span><span class="d">10.07</span><span class="t">Sync All як джоб + дешеві пересинки</span></div>
+      <div class="x">Синк 7 конкурентів: був 15–20 хв і міг тихо померти — став 22 секунди з живим прогресом
+      (коменти качаються лише для нових відео).</div></li>
+    <li class="major"><div class="h"><span class="hash">0b3c674</span><span class="d">13.07</span><span class="t">Niche Watch</span></div>
+      <div class="x">Відповідь на запит клієнта «trending faceless videos rn»: до 6 ніш на канал,
+      скан за 7 днів, ранжування по VPH, авто-оновлення при візиті. Бойовий тест: 19 хітів,
+      включно з відео 144K за 5 днів з каналу поза списком конкурентів.</div></li>
+    <li><div class="h"><span class="hash">3a193c4</span><span class="d">13.07</span><span class="t">deleteIdea: перенумерація позицій</span></div>
+      <div class="x">Знайдено адверсарною верифікацією (3 незалежні агенти перевіряли всю платформу),
+      відтворено, полагоджено, перевірено повторенням точного сценарію.</div></li>
+    <li><div class="h"><span class="hash">ff7b6fa</span><span class="d">13.07</span><span class="t">Формула: спершу рецепт, потім цифри</span></div>
+      <div class="x">Секція «Next video: do this» — шаблон назви з готовим прикладом, мініатюрка, один
+      «never do». Наука — нижче, для охочих.</div></li>
+    <li><div class="h"><span class="hash">a4dd930</span><span class="d">22.07</span><span class="t">Формулу згорнуто в один рядок</span></div>
+      <div class="x">Для каналу з усталеним форматом простиня — шум; головна робота формули невидима
+      (вона живить Generate title). Один клік — розгорнулась.</div></li>
+  </ul>
+
+  <h2 id="rules">Принципи якості (чому продукт такий)</h2>
+  <ul class="tight">
+    <li><b>Практична користь понад «просто працює».</b> Кожен інсайт має кнопку дії. Дашборд без наступного кроку — музей.</li>
+    <li><b>Дані понад думки.</b> Числа — з SQL, AI — лише переказ з (n=…). Малі вибірки не стають правилами.</li>
+    <li><b>Універсальність.</b> Ніяких зашитих ніш/мов: усе виводиться з даних каналу.</li>
+    <li><b>Нічого не губиться.</b> Довгі операції — серверні джоби; оновлення не з'їдають дані старих установок.</li>
+    <li><b>Все перевіряється.</b> Фічі здаються після незалежної верифікації: метрики перераховуються з бази напряму.</li>
+  </ul>
+
+  <div class="taskband" id="task">
+    <p class="eyebrow">Наступна задача · продуктовий бриф</p>
+    <h2>Генератор прев'юшок</h2>
+    <p>Нова вкладка в Ideation-хабі: <b>Thumbnails</b>. Юзер натискає кнопку — і отримує згенеровані
+    прев'юшки (обкладинки відео), які виглядають так, як <i>доведено працює</i> на його каналі
+    і в його ніші. Це бриф про поведінку і якість — стек, моделі й архітектуру обираєш ти.</p>
+  </div>
+
+  <h3>Як це має поводитись</h3>
+  <div class="flow">
+    <div class="step"><i>Крок 1</i><b>Вибір каналу</b><span>За замовчуванням — активний канал
+      (той, у якому юзер зараз). Дропдаун, щоб обрати інший зі своїх.</span></div>
+    <div class="step"><i>Крок 2</i><b>Кнопка «Згенерувати»</b><span>Один клік. Довга робота —
+      за нашим патерном джобів (прогрес видно, навігація не вбиває).</span></div>
+    <div class="step"><i>Крок 3</i><b>Результат</b><span>Кілька варіантів прев'юшок у стилі,
+      який статистично працює. Юзер бачить, на чому базувалась генерація.</span></div>
+  </div>
+
+  <h3>Ядро якості — на чому базується генерація</h3>
+  <div class="card">
+    <p><b>1. Успішні прев'юшки СВОГО каналу.</b> Система аналізує, який стиль обкладинок реально
+    тягне перегляди/кліки на цьому каналі — по топ-відео. <b>Важливо:</b> не «одне відео залетіло —
+    штампуємо його клони», а патерн з кількох підтверджених переможців.</p>
+    <p><b>2. Успішні прев'юшки КОНКУРЕНТІВ.</b> Конкуренти вже живуть у системі (вкладка Competitors,
+    синк їхніх відео з переглядами вже працює). Їхні найуспішніші обкладинки — теж референс стилю.</p>
+    <p><b>3. Прозорість для юзера.</b> На вкладці має бути прямо написано: генерація використовує
+    дані вашого каналу та ваших конкурентів; конкурентів можна додати на вкладці Competitors.</p>
+  </div>
+
+  <h3>Провайдери генерації — налаштування в Integrations</h3>
+  <div class="card">
+    <ul class="tight">
+      <li>В Integrations з'являється нова секція: юзер <b>обирає провайдера</b> генерації зображень
+        і вставляє його API-ключ.</li>
+      <li>Можна зберегти <b>кілька провайдерів/ключів</b> і перемикатися між ними.</li>
+      <li>На вкладці Thumbnails видно, <b>який провайдер і ключ</b> зараз використовуються.</li>
+    </ul>
+  </div>
+
+  <h3>Що вже є в кодовій базі (спирайся, не переписуй)</h3>
+  <ul class="tight">
+    <li><span class="pill-ok">є</span> OCR-текст усіх мініатюр свого каналу (<code>videos.thumbnail_text</code>) + URL самих картинок;</li>
+    <li><span class="pill-ok">є</span> відео конкурентів з переглядами і URL мініатюр (<code>competitor_videos</code>);</li>
+    <li><span class="pill-ok">є</span> packaging-аналітика: які слова/стилі текстів обкладинок успішні;</li>
+    <li><span class="pill-ok">є</span> патерн фонових джобів (settings-стан, 409, staleness) — OCR/скан/синк уже так працюють;</li>
+    <li><span class="pill-ok">є</span> патерн зберігання ключів в Integrations.</li>
+  </ul>
+
+  <h3>Критерії готовності</h3>
+  <p class="note">Це продуктова планка, а не техвимоги. Головний пріоритет усієї задачі:
+  <b>бездоганно не лише технічно, а й у якості генерації</b> — реальні дані, якісна аналітика свого
+  каналу і конкурентів, практично корисний результат.</p>
+  <ul class="check" id="check">
+    <li><span class="box">✓</span><span class="txt">Вкладка Thumbnails в Ideation; канал за замовчуванням — активний, можна обрати інший.</span></li>
+    <li><span class="box">✓</span><span class="txt">Генерація враховує стиль кількох топ-відео свого каналу — не клонує одне вірусне.</span></li>
+    <li><span class="box">✓</span><span class="txt">Генерація враховує успішні прев'юшки конкурентів з вкладки Competitors.</span></li>
+    <li><span class="box">✓</span><span class="txt">Юзер бачить пояснення, на яких даних базується результат, і підказку про додавання конкурентів.</span></li>
+    <li><span class="box">✓</span><span class="txt">Провайдер(и) і ключі — в Integrations; можна кілька, можна перемикати; активний видно на вкладці.</span></li>
+    <li><span class="box">✓</span><span class="txt">Довга генерація — живучий джоб з прогресом (за існуючим патерном).</span></li>
+    <li><span class="box">✓</span><span class="txt">Все по-канально і універсально: працює для будь-якої ніші й мови каналу.</span></li>
+  </ul>
+
+  <footer>
+    Репозиторій: <a href="https://github.com/YT-Wizards/Eric-yt-channel-ai" target="_blank" rel="noreferrer">github.com/YT-Wizards/Eric-yt-channel-ai</a> ·
+    локальний запуск: <code>npm install</code> → <code>npm run dev</code> (база створиться сама в <code>data/</code>) ·
+    питання по продукту — до Влада.
+  </footer>
+</div>
+
+<script>
+  const tabs=document.querySelectorAll('#tabs button');
+  tabs.forEach(b=>b.addEventListener('click',()=>{
+    tabs.forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById(b.dataset.t).classList.add('on');
+  }));
+  document.querySelectorAll('#tl .h').forEach(h=>h.addEventListener('click',()=>{
+    h.parentElement.classList.toggle('open');
+  }));
+  document.querySelectorAll('#check li').forEach(li=>li.addEventListener('click',()=>{
+    li.classList.toggle('done');
+  }));
+  const links=[...document.querySelectorAll('#nav a')];
+  const secs=links.map(a=>document.querySelector(a.getAttribute('href')));
+  const spy=()=>{ let i=0; secs.forEach((s,k)=>{ if(s && s.getBoundingClientRect().top<120) i=k; });
+    links.forEach((a,k)=>a.classList.toggle('on',k===i)); };
+  document.addEventListener('scroll',spy,{passive:true}); spy();
+</script>
+</body>
+</html>
