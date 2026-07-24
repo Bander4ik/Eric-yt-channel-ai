@@ -601,6 +601,32 @@ Verified after the fixes: `0-base.jpg → 0-final.png`, the file route
 serves it as `image/jpeg`, and re-render plus text-layer export both work
 from a JPEG background.
 
+### Competitors, and the bug that hid behind having none
+
+The test channel had no competitors, so criterion 3 had never run on real
+data. Three were added in the same niche (MetaBallStudios, Ridddle UA,
+Zenki Verse) and synced. Winner selection normalises each competitor
+against *its own* median, and it shows: MetaBallStudios at 30x sits next
+to Ridddle UA at 8.69x even though their medians differ by a factor of
+ten, which is exactly what that normalisation is for.
+
+That immediately exposed a third defect. References were assembled as
+own-then-competitor and the provider adapter then took the first N —
+three, on kie. **Every slot went to own thumbnails, so competitor winners
+never reached the image model at all**, while the transparency panel
+listed them as sent. The brief asks for the opposite, and the spec above
+even describes the intended interleave, which the code never did.
+
+Fixed by weaving the two lists (own first, then alternating) and by
+capping in `thumbnail-generate.ts` rather than inside the adapter, so
+`thumbnail_runs.reference_ids` records what was actually sent instead of
+everything that was collected. A run now sends, and names, top own → top
+competitor → second own.
+
+Verified on the real channel: references sent came back as
+`LwXV0oLEfCM` (own, 93x), `NN_mGhLEg5c` (MetaBallStudios), `tFt9WDhWOXo`
+(own, 67x).
+
 ## Appendix: Research Findings (2026-07-24)
 
 - Gemini image models: `gemini-3-pro-image`, `gemini-3.1-flash-image`,

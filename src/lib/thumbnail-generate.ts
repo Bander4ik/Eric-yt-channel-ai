@@ -25,6 +25,7 @@ import {
 } from "./image-provider";
 import {
   DEFAULT_ASPECT,
+  findModelOption,
   isImageProviderChoice,
   type AspectChoice,
   type ImageProviderChoice,
@@ -106,20 +107,34 @@ export async function runGeneration(
   const report = input.onProgress ?? (() => {});
 
   const refs = await collectReferenceThumbnails(channelId);
-  const styleRefs: ReferenceImage[] = [
-    ...refs.own.map((r) => ({
-      bytes: r.bytes,
-      mimeType: r.mimeType,
-      label: `own:${r.videoId} ${r.multiplier.toFixed(1)}x`,
-      sourceUrl: r.sourceUrl,
+  const woven = weaveReferences(
+    refs.own.map((r) => ({
+      videoId: r.videoId,
+      ref: {
+        bytes: r.bytes,
+        mimeType: r.mimeType,
+        label: `own:${r.videoId} ${r.multiplier.toFixed(1)}x`,
+        sourceUrl: r.sourceUrl,
+      },
     })),
-    ...refs.competitor.map((r) => ({
-      bytes: r.bytes,
-      mimeType: r.mimeType,
-      label: `competitor:${r.videoId} ${r.multiplier.toFixed(1)}x`,
-      sourceUrl: r.sourceUrl,
-    })),
-  ];
+    refs.competitor.map((r) => ({
+      videoId: r.videoId,
+      ref: {
+        bytes: r.bytes,
+        mimeType: r.mimeType,
+        label: `competitor:${r.videoId} ${r.multiplier.toFixed(1)}x`,
+        sourceUrl: r.sourceUrl,
+      },
+    }))
+  );
+
+  // Cap here rather than leaving it to the provider adapter, so what the
+  // run records as "references sent" is what was actually sent. The panel
+  // that names them is a transparency claim; it must not list images the
+  // model never saw.
+  const modelOption = findModelOption(provider, providerRow.model);
+  const sent = woven.slice(0, modelOption.maxStyleRefs);
+  const styleRefs: ReferenceImage[] = sent.map((w) => w.ref);
 
   const assets = listBrandAssets(channelId).filter((a) => a.kind !== "font");
   const characterRefs: ReferenceImage[] = [];
@@ -180,10 +195,7 @@ export async function runGeneration(
     model: providerRow.model ?? "",
     variants,
     aspect,
-    referenceIds: [
-      ...refs.own.map((r) => r.videoId),
-      ...refs.competitor.map((r) => r.videoId),
-    ],
+    referenceIds: sent.map((w) => w.videoId),
   });
   report({ stage: "generating", done: 0, failed: 0, runId });
 
@@ -303,6 +315,28 @@ export async function runGeneration(
     uncovered: modelRendersText ? uncoveredCharacters(headline, fontAbs) : [],
     lastError,
   };
+}
+
+/**
+ * Orders style references so a provider's cap cannot silently drop one
+ * whole side of the evidence.
+ *
+ * Every model caps how many style images it accepts, and kie's is three.
+ * Concatenating own-then-competitor meant those three slots always went
+ * to own thumbnails, so competitor winners never reached the image model
+ * at all — the brief asks for exactly the opposite, and the UI was
+ * naming references that had been sliced off before the request.
+ *
+ * Own first, then alternating, so the top own winner still leads and the
+ * top competitor is in by the second slot.
+ */
+function weaveReferences<T>(own: T[], competitor: T[]): T[] {
+  const woven: T[] = [];
+  for (let i = 0; i < Math.max(own.length, competitor.length); i++) {
+    if (own[i] !== undefined) woven.push(own[i]);
+    if (competitor[i] !== undefined) woven.push(competitor[i]);
+  }
+  return woven;
 }
 
 function relPath(channelId: string, runId: number, file: string): string {
