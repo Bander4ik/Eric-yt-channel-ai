@@ -4,11 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   DATA_DIR,
+  getIntegration,
   listCompetitorThumbnailWinners,
   listOwnThumbnailWinners,
   recordClaudeUsage,
   type ThumbnailWinner,
 } from "./db";
+import { streamTurn, type UnifiedUsage } from "./ai-provider";
+import { providerModelId, type ProviderChoice } from "./ai-provider-types";
 import { costMillicents } from "./claude-pricing";
 import { log } from "./logger";
 import { coerceZone, type TextZone } from "./thumbnail-overlay";
@@ -39,8 +42,48 @@ import { dryRunProfile, dryRunPrompt, isDryRun } from "./thumbnail-dryrun";
  * money on it.
  */
 
-const ANALYZER_MODEL = "claude-sonnet-4-6";
-const PROMPT_MODEL = "claude-sonnet-4-6";
+/**
+ * Which model reads the thumbnails and writes the prompt.
+ *
+ * Not hardcoded to Claude. The app already drives either Anthropic or
+ * Gemini through `ai-provider.ts`, including image input, and Google
+ * hands out a free API key with no card attached. Tying this feature to
+ * a paid Anthropic account would have made the whole tab unreachable for
+ * anyone without one, for no technical reason.
+ *
+ * Selection is by which key is present, Claude first because its vision
+ * output has been the more literal of the two in this codebase's
+ * experience with thumbnail OCR. A user with both keys can flip the
+ * order by clearing one.
+ */
+const DEFAULT_GEMINI_ANALYZER: ProviderChoice = "gemini-2.5-flash";
+
+export type AnalysisProvider = {
+  provider: ProviderChoice;
+  apiKey: string;
+  /** The model id actually sent, for logging and usage accounting. */
+  model: string;
+};
+
+export function resolveAnalysisProvider(): AnalysisProvider | null {
+  const claudeKey = getIntegration("claude")?.api_key;
+  if (claudeKey) {
+    return {
+      provider: "claude",
+      apiKey: claudeKey,
+      model: providerModelId("claude"),
+    };
+  }
+  const geminiKey = getIntegration("google_gemini")?.api_key;
+  if (geminiKey) {
+    return {
+      provider: DEFAULT_GEMINI_ANALYZER,
+      apiKey: geminiKey,
+      model: providerModelId(DEFAULT_GEMINI_ANALYZER),
+    };
+  }
+  return null;
+}
 
 /** Matches FORMULA_MIN_USES in packaging.ts — one bar across the app. */
 export const MIN_WINNERS = 5;
@@ -258,7 +301,7 @@ Return ONLY a JSON object, no prose and no code fence, in exactly this shape:
 "dominant" is 2-4 hex colours. "textZone" is where the headline sits in most of them. "wordCountBand" is like "2-3" or "4-6". "avoid" is what these winners consistently do NOT do.`;
 
 export async function analyseThumbnailStyle(input: {
-  apiKey: string;
+  analyser: AnalysisProvider;
   own: ReferenceThumbnail[];
   competitor: ReferenceThumbnail[];
 }): Promise<{ profile: ThumbnailStyleProfile; model: string }> {
@@ -296,22 +339,61 @@ export async function analyseThumbnailStyle(input: {
   }
   content.push({ type: "text", text: ANALYSIS_INSTRUCTIONS });
 
-  const client = new Anthropic({ apiKey: input.apiKey });
-  const started = Date.now();
-  const response = await client.messages.create({
-    model: ANALYZER_MODEL,
-    max_tokens: 2000,
-    messages: [{ role: "user", content }],
+  const raw = await runTurn({
+    analyser: input.analyser,
+    content,
+    maxTokens: 2000,
+    label: "thumbnail style analysis",
   });
 
-  recordAnalysisUsage(response, ANALYZER_MODEL, started, "thumbnail style analysis");
+  return {
+    profile: normaliseProfile(parseJsonObject(raw)),
+    model: input.analyser.model,
+  };
+}
 
-  const raw = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+/**
+ * One non-streaming turn against whichever provider is configured.
+ *
+ * Goes through `ai-provider.ts` rather than the Anthropic SDK directly,
+ * which is what lets a free Gemini key drive this feature. That adapter
+ * already converts Anthropic-shaped image blocks into Gemini's
+ * inlineData at the SDK boundary, so the caller builds one message shape
+ * and neither branch has to know about the other.
+ */
+async function runTurn(opts: {
+  analyser: AnalysisProvider;
+  content: Anthropic.MessageParam["content"];
+  maxTokens: number;
+  label: string;
+}): Promise<string> {
+  const started = Date.now();
+  const result = await streamTurn({
+    provider: opts.analyser.provider,
+    apiKey: opts.analyser.apiKey,
+    system:
+      "You analyse YouTube thumbnails and return strict JSON. Never wrap the JSON in a code fence.",
+    messages: [{ role: "user", content: opts.content }],
+    tools: [],
+    maxTokens: opts.maxTokens,
+    // Nothing consumes the stream here; we want the final text. The
+    // callback is required by the interface.
+    onText: () => {},
+  });
+
+  recordAnalysisUsage(result.usage, opts.analyser.model, started, opts.label);
+
+  const text = result.blocks
+    .filter((b): b is { type: "text"; text: string } => b.type === "text")
     .map((b) => b.text)
     .join("");
 
-  return { profile: normaliseProfile(parseJsonObject(raw)), model: ANALYZER_MODEL };
+  if (!text.trim()) {
+    throw new Error(
+      `${opts.analyser.model} returned no text for the ${opts.label}. It may have refused the request.`
+    );
+  }
+  return text;
 }
 
 /**
@@ -415,7 +497,7 @@ Return ONLY a JSON object, no prose and no code fence:
 "prompt" is one paragraph, concrete and visual. "overlayCandidates" are three headline options for the thumbnail, each within the channel's observed word-count band — punchy, not a restatement of the full title. "zone" is where the headline should sit.`;
 
 export async function buildGenerationPlan(input: {
-  apiKey: string;
+  analyser: AnalysisProvider;
   profile: ThumbnailStyleProfile;
   title: string;
   userNote?: string | null;
@@ -433,9 +515,6 @@ export async function buildGenerationPlan(input: {
     };
   }
 
-  const client = new Anthropic({ apiKey: input.apiKey });
-  const started = Date.now();
-
   const brandLine = input.brandAssetDescriptions.length
     ? `The channel supplies these recurring brand assets as reference images: ${input.brandAssetDescriptions.join("; ")}. Keep them recognisable.`
     : "The channel supplies no brand assets.";
@@ -444,13 +523,11 @@ export async function buildGenerationPlan(input: {
     ? `IMPORTANT OVERRIDE: this channel's language cannot be rendered by our text compositor, so the image model MUST draw the headline itself, spelled exactly as given. Include the exact headline text in the prompt, in quotes, and describe its treatment (${input.profile.textTreatment.uppercase ? "uppercase" : "sentence case"}, heavy weight, high contrast).`
     : "The image must contain no text at all.";
 
-  const response = await client.messages.create({
-    model: PROMPT_MODEL,
-    max_tokens: 1200,
-    messages: [
-      {
-        role: "user",
-        content: `VIDEO TITLE: ${input.title}
+  const raw = await runTurn({
+    analyser: input.analyser,
+    maxTokens: 1200,
+    label: "thumbnail prompt build",
+    content: `VIDEO TITLE: ${input.title}
 
 CHANNEL STYLE PROFILE (derived from thumbnails that beat this channel's median):
 ${JSON.stringify(input.profile, null, 2)}
@@ -460,16 +537,7 @@ ${textLine}
 ${input.userNote ? `\nThe channel owner adds: ${input.userNote}` : ""}
 
 ${PROMPT_INSTRUCTIONS}`,
-      },
-    ],
   });
-
-  recordAnalysisUsage(response, PROMPT_MODEL, started, "thumbnail prompt build");
-
-  const raw = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
   const parsed = parseJsonObject(raw);
 
   const candidates = Array.isArray(parsed.overlayCandidates)
@@ -513,22 +581,16 @@ function fallbackPrompt(
  * Integrations page can tell them apart.
  */
 function recordAnalysisUsage(
-  response: Anthropic.Message,
+  usage: UnifiedUsage,
   model: string,
   startedAt: number,
   label: string
 ): void {
   try {
-    const usage = response.usage as {
-      input_tokens?: number;
-      output_tokens?: number;
-      cache_creation_input_tokens?: number;
-      cache_read_input_tokens?: number;
-    };
-    const inputFresh = usage?.input_tokens ?? 0;
-    const output = usage?.output_tokens ?? 0;
-    const inputCacheWrite = usage?.cache_creation_input_tokens ?? 0;
-    const inputCacheRead = usage?.cache_read_input_tokens ?? 0;
+    const inputFresh = usage.inputTokens;
+    const output = usage.outputTokens;
+    const inputCacheWrite = usage.cacheWriteTokens;
+    const inputCacheRead = usage.cacheReadTokens;
     recordClaudeUsage({
       sessionId: null,
       executorModel: model,

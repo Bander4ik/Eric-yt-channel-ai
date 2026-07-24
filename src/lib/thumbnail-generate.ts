@@ -14,6 +14,7 @@ import {
   buildGenerationPlan,
   collectReferenceThumbnails,
   safeSegment,
+  type AnalysisProvider,
   type ThumbnailStyleProfile,
 } from "./thumbnail-style";
 import {
@@ -49,7 +50,7 @@ import { log } from "./logger";
 
 export type RunGenerationInput = {
   channelId: string;
-  claudeKey: string;
+  analyser: AnalysisProvider;
   providerRow: ImageProviderRow;
   profile: ThumbnailStyleProfile;
   title: string;
@@ -85,7 +86,6 @@ export async function runGeneration(
 ): Promise<RunGenerationResult> {
   const {
     channelId,
-    claudeKey,
     providerRow,
     profile,
     title,
@@ -147,7 +147,7 @@ export async function runGeneration(
         zone: coerceZone(input.zone ?? profile.composition.textZone),
       }
     : await buildGenerationPlan({
-        apiKey: claudeKey,
+        analyser: input.analyser,
         profile,
         title,
         userNote: input.userNote ?? null,
@@ -294,3 +294,4 @@ function mimeFromPath(p: string): string {
   if (ext === ".webp") return "image/webp";
   return "image/jpeg";
 }
+

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   countVisibleCompetitors,
   getActiveChannelId,
-  getIntegration,
   getThumbnailStyleProfile,
   listCompetitorThumbnailWinners,
   listOwnThumbnailWinners,
@@ -10,6 +9,7 @@ import {
 } from "@/lib/db";
 import {
   analyseThumbnailStyle,
+  resolveAnalysisProvider,
   collectReferenceThumbnails,
   MAX_COMPETITOR_REFS,
   MAX_OWN_REFS,
@@ -117,13 +117,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
   }
 
-  // Dry run calls no model, so a missing key must not block the plumbing
-  // from being exercised (see thumbnail-dryrun.ts).
-  const apiKey =
-    getIntegration("claude")?.api_key ?? (isDryRun() ? "dry-run" : null);
-  if (!apiKey) {
+  // Either text model can read thumbnails. Dry run calls neither, so a
+  // missing key must not block the plumbing from being exercised.
+  const analyser =
+    resolveAnalysisProvider() ??
+    (isDryRun()
+      ? { provider: "claude" as const, apiKey: "dry-run", model: "dry-run" }
+      : null);
+  if (!analyser) {
     return NextResponse.json(
-      { error: "Claude API key is not configured. Add it in Integrations." },
+      {
+        error:
+          "No text model is configured. Add a Claude or a Gemini API key in Integrations — Gemini has a free tier.",
+      },
       { status: 400 }
     );
   }
@@ -188,7 +194,7 @@ export async function POST(req: Request) {
       const { profile, model } = dryWithoutImages
         ? { profile: dryRunProfile({ ownIds, competitorIds }), model: "dry-run" }
         : await analyseThumbnailStyle({
-            apiKey,
+            analyser,
             own: refs.own,
             competitor: refs.competitor,
           });
@@ -229,4 +235,5 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, started: true, total: ownCount + compCount });
 }
+
 

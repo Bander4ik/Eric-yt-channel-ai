@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     try {
       const result = await runGeneration({
         channelId,
-        claudeKey: pre.claudeKey,
+        analyser: pre.analyser,
         providerRow: pre.providerRow,
         profile: pre.profile,
         title,
@@ -204,4 +204,5 @@ function clampInt(v: unknown, fallback: number, min: number, max: number): numbe
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
 }
+
 
