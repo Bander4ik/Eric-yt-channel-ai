@@ -361,6 +361,16 @@ function drawHeadline(
     height,
     margin,
   });
+
+  // The banner is drawn first, edge to edge horizontally, because that
+  // is how channels that use one actually use it: a full-width strip,
+  // not a box hugging the words.
+  if (spec.plate) {
+    const pad = fontSize * 0.28;
+    ctx.fillStyle = spec.plateColor || "#D01B1B";
+    ctx.fillRect(0, y - pad, width, blockHeight + pad * 2);
+  }
+
   ctx.textAlign = align;
   ctx.textBaseline = "top";
 

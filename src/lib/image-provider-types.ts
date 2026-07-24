@@ -65,7 +65,12 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
     {
       id: "gemini-3-pro-image",
       label: "Gemini 3 Pro Image",
-      estimateCents: 13.4,
+      // Google's published rate works out to 13.4c per 1K/2K image, but
+      // a real 2-image run on 2026-07-24 recorded 32c from the API's own
+      // usage numbers. The estimate follows the measurement, not the
+      // brochure: a button that promises less than it charges is worse
+      // than one that rounds up.
+      estimateCents: 16,
       maxStyleRefs: 3,
       maxCharacterRefs: 5,
       note: "Best text-in-frame. Hard cap of 3 style references.",

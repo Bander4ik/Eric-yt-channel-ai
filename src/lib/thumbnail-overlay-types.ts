@@ -47,6 +47,14 @@ export type OverlaySpec = {
   stroke: boolean;
   shadow: boolean;
   uppercase: boolean;
+  /**
+   * Solid banner behind the headline. Some channels never put a word
+   * directly on the picture, and reproducing their layout without the
+   * block reads as a different channel however right the colours are.
+   */
+  plate: boolean;
+  /** Banner colour; ignored when `plate` is false. */
+  plateColor: string;
   /** Fraction of the frame height the text block may occupy, 0.1–0.6. */
   maxHeightRatio: number;
 };
@@ -59,6 +67,8 @@ export const DEFAULT_OVERLAY: Omit<OverlaySpec, "text"> = {
   stroke: true,
   shadow: true,
   uppercase: true,
+  plate: false,
+  plateColor: "#D01B1B",
   maxHeightRatio: 0.34,
 };
 

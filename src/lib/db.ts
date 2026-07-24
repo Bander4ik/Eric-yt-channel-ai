@@ -5665,6 +5665,27 @@ function thumbMaturityCutoff(): number {
   return Math.floor(Date.now() / 1000) - THUMB_MIN_AGE_DAYS * 86400;
 }
 
+/**
+ * A few of the channel's own recent titles, used as language evidence.
+ *
+ * The prompt builder has to write a headline in the channel's language,
+ * and "same language as the title" is not enough on its own: given an
+ * English title about Norway, a model will cheerfully answer in
+ * Norwegian. Real titles from the channel settle it without hardcoding
+ * a language anywhere.
+ */
+export function listRecentChannelTitles(channelId: string, limit = 6): string[] {
+  const rows = db
+    .prepare(
+      `SELECT title FROM videos
+       WHERE channel_id = ? AND title IS NOT NULL AND title <> ''
+       ORDER BY published_at DESC
+       LIMIT ?`
+    )
+    .all(channelId, limit) as Array<{ title: string }>;
+  return rows.map((r) => r.title);
+}
+
 /** Top-performing mature thumbnails from the channel itself. */
 export function listOwnThumbnailWinners(
   channelId: string,

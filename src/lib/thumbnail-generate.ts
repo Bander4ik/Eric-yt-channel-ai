@@ -7,6 +7,7 @@ import {
   DATA_DIR,
   getChannelFontPath,
   listBrandAssets,
+  listRecentChannelTitles,
   setThumbnailRunCost,
   setThumbnailRunCredits,
   type ImageProviderRow,
@@ -175,6 +176,7 @@ export async function runGeneration(
         profile,
         title,
         aspect,
+        channelTitles: listRecentChannelTitles(channelId),
         userNote: input.userNote ?? null,
         brandAssetDescriptions: assets.map(
           (a) => `${a.kind}${a.label ? ` (${a.label})` : ""}`
@@ -215,6 +217,10 @@ export async function runGeneration(
     uppercase: profile.textTreatment.uppercase,
     stroke: profile.textTreatment.stroke,
     shadow: profile.textTreatment.shadow,
+    plate: profile.textTreatment.plate,
+    plateColor:
+      profile.textTreatment.plateColor ?? DEFAULT_OVERLAY.plateColor,
+    color: profile.textTreatment.textColor ?? DEFAULT_OVERLAY.color,
   };
 
   const usages: Array<ImageUsage | undefined> = [];

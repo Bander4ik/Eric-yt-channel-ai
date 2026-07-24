@@ -223,7 +223,11 @@ async function generateGemini(
       response_modalities: ["image"],
       response_format: {
         type: "image",
-        mime_type: "image/png",
+        // The Interactions API accepts JPEG only, and answers a request
+        // for png with a 400. Verified against the live API on
+        // 2026-07-24. Losing nothing by it: the composited cover is
+        // redrawn as PNG by our own renderer anyway.
+        mime_type: "image/jpeg",
         aspect_ratio: opts.aspect ?? DEFAULT_ASPECT,
         image_size: "2K",
       },
@@ -266,6 +270,25 @@ async function generateGemini(
 function extractGeminiImage(
   json: Record<string, unknown>
 ): { data: string; mimeType: string } | null {
+  // What the live Interactions API actually returns (verified
+  // 2026-07-24): an ordered `steps` array, where the step of type
+  // "model_output" carries content entries of type "image". The two
+  // shapes below it are older and kept as fallbacks.
+  const steps = json.steps as
+    | Array<{ type?: string; content?: Array<Record<string, unknown>> }>
+    | undefined;
+  for (const step of steps ?? []) {
+    for (const item of step.content ?? []) {
+      const data = item.data as string | undefined;
+      if (item.type === "image" && data) {
+        return {
+          data,
+          mimeType: (item.mime_type as string) ?? "image/jpeg",
+        };
+      }
+    }
+  }
+
   const direct = json.output_image as
     | { data?: string; mime_type?: string }
     | undefined;

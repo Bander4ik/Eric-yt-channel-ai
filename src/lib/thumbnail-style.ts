@@ -113,6 +113,10 @@ export type ThumbnailStyleProfile = {
     uppercase: boolean;
     stroke: boolean;
     shadow: boolean;
+    /** True when the headline sits on a solid banner rather than the picture. */
+    plate: boolean;
+    plateColor: string | null;
+    textColor: string | null;
   };
   mood: StyleTrait;
   avoid: string[];
@@ -296,13 +300,15 @@ Return ONLY a JSON object, no prose and no code fence, in exactly this shape:
   "composition": { "summary": string, "textZone": "top-left"|"top-center"|"top-right"|"left"|"center"|"right"|"bottom-left"|"bottom-center"|"bottom-right", "n": number, "evidence": string[] },
   "palette": { "summary": string, "dominant": string[], "n": number, "evidence": string[] },
   "subject": { "summary": string, "facePresent": boolean, "recurringElement": string|null, "n": number, "evidence": string[] },
-  "textTreatment": { "summary": string, "wordCountBand": string, "uppercase": boolean, "stroke": boolean, "shadow": boolean, "n": number, "evidence": string[] },
+  "textTreatment": { "summary": string, "wordCountBand": string, "uppercase": boolean, "stroke": boolean, "shadow": boolean, "plate": boolean, "plateColor": string|null, "textColor": string|null, "n": number, "evidence": string[] },
   "mood": { "summary": string, "n": number, "evidence": string[] },
   "avoid": string[],
   "caveats": string[]
 }
 
-"dominant" is 2-4 hex colours. "textZone" is where the headline sits in most of them. "wordCountBand" is like "2-3" or "4-6". "avoid" is what these winners consistently do NOT do.`;
+"dominant" is 2-4 hex colours. "textZone" is where the headline sits in most of them. "wordCountBand" is like "2-3" or "4-6". "avoid" is what these winners consistently do NOT do.
+
+"plate" is true when the headline sits on a solid colour block or banner rather than directly on the picture; "plateColor" is that block's hex colour and "textColor" the letters' hex colour. Both null when there is no plate. Look carefully: a banner behind the words is one of the strongest things a channel repeats, and getting it wrong makes every generated cover look like a different channel.`;
 
 export async function analyseThumbnailStyle(input: {
   analyser: AnalysisProvider;
@@ -419,6 +425,17 @@ function parseJsonObject(raw: string): Record<string, unknown> {
  * trusted — a model that claims n=9 while listing three ids would
  * otherwise turn a caveat into a rule.
  */
+/**
+ * A hex colour the canvas can actually use, or null. Models answer this
+ * field with "red" or "n/a" as often as with a hex value, and a bad
+ * fillStyle silently paints black rather than throwing.
+ */
+function hexOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(s) ? s : null;
+}
+
 function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
   const trait = (key: string): StyleTrait => {
     const t = (raw[key] ?? {}) as Record<string, unknown>;
@@ -462,6 +479,9 @@ function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
       uppercase: textTreatment?.uppercase !== false,
       stroke: textTreatment?.stroke !== false,
       shadow: textTreatment?.shadow !== false,
+      plate: textTreatment?.plate === true,
+      plateColor: hexOrNull(textTreatment?.plateColor),
+      textColor: hexOrNull(textTreatment?.textColor),
     },
     mood: trait("mood"),
     avoid: Array.isArray(raw.avoid) ? (raw.avoid as unknown[]).map(String) : [],
@@ -487,7 +507,8 @@ Critical constraints:
 - The image model must DERIVE the visual grammar from the reference images it is given. It must NOT reproduce any single reference's subject, layout or specific scene. Say this explicitly in the prompt.
 - The image must contain NO TEXT, NO LETTERING, NO WATERMARKS and no logos. The headline is added later by a separate renderer. State this in the prompt.
 - Leave the headline zone visually calm — no busy detail there — so overlaid text stays readable.
-- Write the headline candidates in the SAME LANGUAGE as the video title you are given. Never translate it to English.
+- Write the headline candidates in the channel's own language, shown by the sample titles you are given. The subject matter is irrelevant to this: a video about Norway on an English channel still gets an English headline. Never translate the channel's language into another one.
+- If the profile names a recurring non-text graphic element (an arrow, a frame, a marker), include it in the prompt. It is not text and it is part of why these covers work.
 
 Return ONLY a JSON object, no prose and no code fence:
 
@@ -518,6 +539,8 @@ export async function buildGenerationPlan(input: {
   title: string;
   /** Defaults to 16:9 when the caller doesn't care. */
   aspect?: AspectChoice;
+  /** Real titles from this channel, as evidence of its language. */
+  channelTitles?: string[];
   userNote?: string | null;
   brandAssetDescriptions: string[];
   headlineZone?: TextZone;
@@ -541,11 +564,19 @@ export async function buildGenerationPlan(input: {
     ? `IMPORTANT OVERRIDE: this channel's language cannot be rendered by our text compositor, so the image model MUST draw the headline itself, spelled exactly as given. Include the exact headline text in the prompt, in quotes, and describe its treatment (${input.profile.textTreatment.uppercase ? "uppercase" : "sentence case"}, heavy weight, high contrast).`
     : "The image must contain no text at all.";
 
+  const languageLine = input.channelTitles?.length
+    ? `THIS CHANNEL'S OWN RECENT TITLES (these show the language to write the headline in):\n${input.channelTitles
+        .map((t) => `- ${t}`)
+        .join("\n")}`
+    : "";
+
   const raw = await runTurn({
     analyser: input.analyser,
     maxTokens: 1200,
     label: "thumbnail prompt build",
     content: `VIDEO TITLE: ${input.title}
+
+${languageLine}
 
 CHANNEL STYLE PROFILE (derived from thumbnails that beat this channel's median):
 ${JSON.stringify(input.profile, null, 2)}
