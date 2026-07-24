@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   DATA_DIR,
+  getChannelFontPath,
+  getThumbnailRun,
   getThumbnailVariant,
   pickThumbnailVariant,
   updateThumbnailVariantOverlay,
@@ -94,11 +96,20 @@ export async function PATCH(req: Request, ctx: Ctx) {
         : stored.maxHeightRatio ?? DEFAULT_OVERLAY.maxHeightRatio,
   };
 
-  if (spec.text.trim() && !fontCovers(spec.text)) {
-    const missing = uncoveredCharacters(spec.text).slice(0, 8).join(" ");
+  // The re-render must use the same font the run used, otherwise a
+  // channel with its own uploaded font would silently get the bundled
+  // one back the moment the user edited a word.
+  const run = getThumbnailRun(variant.run_id);
+  const fontRel = run ? getChannelFontPath(run.channel_id) : null;
+  const fontAbs = fontRel ? path.join(DATA_DIR, fontRel) : null;
+
+  if (spec.text.trim() && !fontCovers(spec.text, fontAbs)) {
+    const missing = uncoveredCharacters(spec.text, fontAbs)
+      .slice(0, 8)
+      .join(" ");
     return NextResponse.json(
       {
-        error: `The bundled font has no glyphs for: ${missing}. Generate again so the image model draws the headline itself.`,
+        error: `The headline font has no glyphs for: ${missing}. Upload a font that covers this script as a brand asset, or generate again so the image model draws the headline itself.`,
       },
       { status: 400 }
     );
@@ -106,7 +117,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   try {
     const base = fs.readFileSync(path.join(DATA_DIR, variant.base_path));
-    const composited = await renderOverlay(base, spec);
+    const composited = await renderOverlay(base, spec, fontAbs);
     const finalRel =
       variant.final_path && variant.final_path !== variant.base_path
         ? variant.final_path

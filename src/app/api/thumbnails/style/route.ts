@@ -24,6 +24,7 @@ import {
   progressJob,
   readJob,
   startJob,
+  THUMBNAIL_STYLE_JOB,
 } from "@/lib/settings-job";
 import { log } from "@/lib/logger";
 
@@ -41,8 +42,6 @@ import { log } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-const JOB_BASE = "thumbnail.style.job";
 
 function resolveChannelId(req: Request): string | null {
   const url = new URL(req.url);
@@ -89,7 +88,7 @@ export async function GET(req: Request) {
       competitor: competitor.map(publicWinner),
     },
     stale: ageMs !== null && ageMs > PROFILE_MAX_AGE_MS,
-    job: readJob(jobKey(JOB_BASE, channelId)),
+    job: readJob(jobKey(THUMBNAIL_STYLE_JOB, channelId)),
   });
 }
 
@@ -125,7 +124,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const key = jobKey(JOB_BASE, channelId);
+  const key = jobKey(THUMBNAIL_STYLE_JOB, channelId);
   if (isJobRunning(key)) {
     return NextResponse.json(
       { error: "A style analysis is already running for this channel." },
@@ -208,3 +207,4 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, started: true, total: ownCount + compCount });
 }
+

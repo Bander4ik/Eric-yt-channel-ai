@@ -25,6 +25,17 @@ import { getSetting, setSetting } from "./db";
 
 export const STALE_JOB_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Job key bases for the thumbnail generator. They live here, not in the
+ * route files, because Next only allows HTTP handlers to be exported
+ * from `route.ts` — and because generation and batch generation
+ * deliberately SHARE a key: both write into the same run history and
+ * both spend the same provider credit, so a batch running while someone
+ * clicks Generate should be a 409, not two concurrent spenders.
+ */
+export const THUMBNAIL_STYLE_JOB = "thumbnail.style.job";
+export const THUMBNAIL_GEN_JOB = "thumbnail.gen.job";
+
 export type SettingsJob = {
   running: boolean;
   done: number;

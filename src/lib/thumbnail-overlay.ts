@@ -37,29 +37,70 @@ export type { OverlaySpec, TextZone } from "./thumbnail-overlay-types";
  * rendering by reading the font's own cmap table — see `fontCovers`.
  * A silent fallback would produce boxes or a wrong-weight system font
  * and the user would only find out after uploading.
+ *
+ * A channel can upload its own .ttf/.otf as a brand asset, which both
+ * makes covers look like that channel and is the escape hatch for
+ * scripts the bundled font doesn't carry. Every function here takes an
+ * optional font path for exactly that; passing none uses the bundled
+ * one.
  */
 
 const FONT_FILE = "FiraSans-ExtraBold.ttf";
-const FONT_FAMILY = "ChannelThumb";
+const BUNDLED_FAMILY = "ChannelThumb";
 
-function fontPath(): string {
+function bundledFontPath(): string {
   return path.join(process.cwd(), "public", "fonts", FONT_FILE);
 }
 
-let fontRegistered: boolean | null = null;
+/**
+ * Registered families, keyed by absolute font path. @napi-rs/canvas
+ * registers into a process-global table, so re-registering the same file
+ * on every request would be pure waste; a custom font also needs a
+ * family name that can't collide with the bundled one or with another
+ * channel's upload.
+ */
+const registeredFamilies = new Map<string, string | null>();
 
-/** Registers the bundled font once per process. */
-export function ensureFontRegistered(): boolean {
-  if (fontRegistered !== null) return fontRegistered;
+function familyNameFor(absPath: string): string {
+  if (absPath === bundledFontPath()) return BUNDLED_FAMILY;
+  // Derived from the path so two channels' fonts never share a name,
+  // and stable so repeat calls hit the cache.
+  const slug = absPath.replace(/[^A-Za-z0-9]/g, "").slice(-24);
+  return `ChannelThumb_${slug}`;
+}
+
+/**
+ * Registers a font and returns the family name to use in `ctx.font`, or
+ * null when the file could not be loaded.
+ */
+function registerFont(absPath: string): string | null {
+  const cached = registeredFamilies.get(absPath);
+  if (cached !== undefined) return cached;
+
+  const family = familyNameFor(absPath);
+  let result: string | null = null;
   try {
-    GlobalFonts.registerFromPath(fontPath(), FONT_FAMILY);
-    fontRegistered = GlobalFonts.families.some(
-      (f) => f.family === FONT_FAMILY
-    );
+    GlobalFonts.registerFromPath(absPath, family);
+    result = GlobalFonts.families.some((f) => f.family === family)
+      ? family
+      : null;
   } catch {
-    fontRegistered = false;
+    result = null;
   }
-  return fontRegistered;
+  registeredFamilies.set(absPath, result);
+  return result;
+}
+
+/** Resolves the font to use: the channel's upload, else the bundled one. */
+function resolveFontPath(customFontPath?: string | null): string {
+  return customFontPath && fs.existsSync(customFontPath)
+    ? customFontPath
+    : bundledFontPath();
+}
+
+/** True when the chosen font could be loaded and used for rendering. */
+export function ensureFontRegistered(customFontPath?: string | null): boolean {
+  return registerFont(resolveFontPath(customFontPath)) !== null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -71,13 +112,14 @@ export function ensureFontRegistered(): boolean {
  * failure mode we're trying to catch.
  * ------------------------------------------------------------------ */
 
-let coverageCache: Set<number> | null = null;
+const coverageCache = new Map<string, Set<number>>();
 
-function readFontCoverage(): Set<number> {
-  if (coverageCache) return coverageCache;
+function readFontCoverage(absPath: string): Set<number> {
+  const cached = coverageCache.get(absPath);
+  if (cached) return cached;
   const codepoints = new Set<number>();
   try {
-    const buf = fs.readFileSync(fontPath());
+    const buf = fs.readFileSync(absPath);
     const numTables = buf.readUInt16BE(4);
     let cmapOffset = 0;
     for (let i = 0; i < numTables; i++) {
@@ -88,7 +130,7 @@ function readFontCoverage(): Set<number> {
       }
     }
     if (!cmapOffset) {
-      coverageCache = codepoints;
+      coverageCache.set(absPath, codepoints);
       return codepoints;
     }
 
@@ -127,18 +169,19 @@ function readFontCoverage(): Set<number> {
   } catch {
     /* unreadable font — treated as covering nothing, see fontCovers */
   }
-  coverageCache = codepoints;
+  coverageCache.set(absPath, codepoints);
   return codepoints;
 }
 
 /**
- * True when every printable character in `text` has a glyph in the
- * bundled font. Whitespace is ignored. Returns false for an unreadable
- * font file, which correctly pushes the caller onto the model-rendered
- * text path instead of producing a page of tofu.
+ * True when every printable character in `text` has a glyph in the font
+ * that will actually be used (the channel's uploaded one if it has one,
+ * otherwise the bundled one). Whitespace is ignored. Returns false for
+ * an unreadable font file, which correctly pushes the caller onto the
+ * model-rendered text path instead of producing a page of tofu.
  */
-export function fontCovers(text: string): boolean {
-  const coverage = readFontCoverage();
+export function fontCovers(text: string, customFontPath?: string | null): boolean {
+  const coverage = readFontCoverage(resolveFontPath(customFontPath));
   if (coverage.size === 0) return false;
   for (const ch of text) {
     const cp = ch.codePointAt(0);
@@ -150,8 +193,11 @@ export function fontCovers(text: string): boolean {
 }
 
 /** The characters that have no glyph — for an honest error message. */
-export function uncoveredCharacters(text: string): string[] {
-  const coverage = readFontCoverage();
+export function uncoveredCharacters(
+  text: string,
+  customFontPath?: string | null
+): string[] {
+  const coverage = readFontCoverage(resolveFontPath(customFontPath));
   if (coverage.size === 0) return [...new Set(text.replace(/\s/g, ""))];
   const missing = new Set<string>();
   for (const ch of text) {
@@ -176,11 +222,14 @@ const LINE_SPACING = 1.06;
  */
 export async function renderOverlay(
   baseImage: Buffer,
-  spec: OverlaySpec
+  spec: OverlaySpec,
+  customFontPath?: string | null
 ): Promise<Buffer> {
-  if (!ensureFontRegistered()) {
+  const chosenPath = resolveFontPath(customFontPath);
+  const family = registerFont(chosenPath);
+  if (!family) {
     throw new Error(
-      `The bundled thumbnail font could not be loaded from ${fontPath()} — text overlay is unavailable.`
+      `The thumbnail font could not be loaded from ${chosenPath} — text overlay is unavailable.`
     );
   }
 
@@ -205,7 +254,7 @@ export async function renderOverlay(
 
   const text = spec.uppercase ? spec.text.toLocaleUpperCase() : spec.text;
   if (text.trim()) {
-    drawHeadline(ctx, text, spec);
+    drawHeadline(ctx, text, spec, family);
   }
 
   return canvas.toBuffer("image/png");
@@ -213,7 +262,12 @@ export async function renderOverlay(
 
 type Ctx2D = ReturnType<ReturnType<typeof createCanvas>["getContext"]>;
 
-function drawHeadline(ctx: Ctx2D, text: string, spec: OverlaySpec): void {
+function drawHeadline(
+  ctx: Ctx2D,
+  text: string,
+  spec: OverlaySpec,
+  family: string
+): void {
   const boxWidth = THUMBNAIL_WIDTH - MARGIN * 2;
   const boxHeight = THUMBNAIL_HEIGHT * clamp(spec.maxHeightRatio, 0.1, 0.6);
 
@@ -226,7 +280,7 @@ function drawHeadline(ctx: Ctx2D, text: string, spec: OverlaySpec): void {
   let bestLines: string[] = [text];
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2);
-    ctx.font = `800 ${mid}px ${FONT_FAMILY}`;
+    ctx.font = `800 ${mid}px ${family}`;
     const lines = wrapText(ctx, text, boxWidth);
     const height = lines.length * mid * LINE_SPACING;
     if (height <= boxHeight) {
@@ -239,7 +293,7 @@ function drawHeadline(ctx: Ctx2D, text: string, spec: OverlaySpec): void {
   }
 
   const fontSize = best;
-  ctx.font = `800 ${fontSize}px ${FONT_FAMILY}`;
+  ctx.font = `800 ${fontSize}px ${family}`;
   const lineHeight = fontSize * LINE_SPACING;
   const blockHeight = bestLines.length * lineHeight;
 

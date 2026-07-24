@@ -421,8 +421,32 @@ against the recorded `cost_cents` on that same run.
 The smoke-test database was deleted afterwards; `data/` is recreated
 empty on the next `npm run dev`.
 
-**Not built (wave 2, as agreed):** zero-input batch generation, remix of
-an existing video, Shorts 9:16, layer export.
+### Wave 2 (also built, same day)
+
+- **Brand assets**, API and UI: upload a character, logo, frame or font
+  per channel. Image assets are sent to the model as character
+  references. Verified: upload, type validation (a `.json` in the font
+  slot is refused), listing, delete.
+- **Custom font.** An uploaded `.ttf`/`.otf` replaces the bundled one for
+  that channel — both for rendering and for the glyph-coverage check, so
+  uploading a font that covers your script is the way to keep compositing
+  text instead of handing it to the image model. Verified end to end by
+  uploading a font and re-rendering a Cyrillic headline through the
+  running app.
+- **Remix**: pick one of your own published videos and generate
+  alternative covers for the same title, so the generator can be judged
+  against the cover that actually shipped.
+- **Zero-input batch** (`POST /api/thumbnails/batch`): the app picks the
+  titles — the longest-waiting cards in the Board's Idea column, or the
+  hottest Niche Watch hits. Capped at 5 titles × 4 variants, shares the
+  single-generation job key so the two can never spend concurrently, and
+  states the image count and cost estimate before the button.
+- The generation pipeline was extracted to `lib/thumbnail-generate.ts`
+  and the pre-checks to `lib/thumbnail-preflight.ts`, so single, remix
+  and batch runs are the same code path rather than three that drift.
+
+**Still not built:** Shorts 9:16 and layer export (both P2, and Shorts
+waits on knowing whether Eric ships any).
 
 ## Appendix: Research Findings (2026-07-24)
 

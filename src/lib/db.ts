@@ -6085,6 +6085,22 @@ export function createBrandAsset(input: {
     .get(Number(info.lastInsertRowid)) as BrandAssetRow;
 }
 
+/**
+ * The channel's uploaded headline font, if it has one. Path is relative
+ * to the data folder. The most recent upload wins, so replacing the font
+ * is just uploading a new one rather than a delete-then-add dance.
+ */
+export function getChannelFontPath(channelId: string): string | null {
+  const row = db
+    .prepare(
+      `SELECT file_path FROM brand_assets
+       WHERE channel_id = ? AND kind = 'font'
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(channelId) as { file_path: string } | undefined;
+  return row?.file_path ?? null;
+}
+
 export function getBrandAsset(id: number): BrandAssetRow | undefined {
   return db.prepare(`SELECT * FROM brand_assets WHERE id = ?`).get(id) as
     | BrandAssetRow

@@ -28,6 +28,7 @@ import {
   isImageProviderChoice,
 } from "@/lib/image-provider-types";
 import { TEXT_ZONES, type TextZone } from "@/lib/thumbnail-overlay-types";
+import { BrandAssetsPanel } from "@/components/ideation/brand-assets-panel";
 
 /**
  * Thumbnails tab — generate covers in the style that measurably works
@@ -143,6 +144,22 @@ type Channel = { id: string; title: string | null };
 
 type Idea = { id: number; title: string; stage: string };
 
+type OwnVideo = {
+  id: string;
+  title: string;
+  thumbnail_url: string | null;
+  views: number | null;
+};
+
+/**
+ * Three ways in. "Title" is the core path — a Board idea, a Signals
+ * title or something typed. "Remix" regenerates covers for a video that
+ * already shipped, which is the fastest way to see the generator's
+ * quality against a real before/after. "Batch" is the zero-input one:
+ * the app picks what to work on.
+ */
+type Mode = "title" | "remix" | "batch";
+
 function fileUrl(rel: string): string {
   return `/api/thumbnails/file/${rel.split("/").map(encodeURIComponent).join("/")}`;
 }
@@ -170,10 +187,16 @@ export function ThumbnailsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [mode, setMode] = useState<Mode>("title");
   const [title, setTitle] = useState("");
   const [sourceId, setSourceId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [variants, setVariants] = useState(DEFAULT_VARIANTS);
+  const [ownVideos, setOwnVideos] = useState<OwnVideo[]>([]);
+  const [remix, setRemix] = useState<OwnVideo | null>(null);
+  const [videoQuery, setVideoQuery] = useState("");
+  const [batchSource, setBatchSource] = useState<"ideas" | "signals">("ideas");
+  const [batchCount, setBatchCount] = useState(3);
   const [genJob, setGenJob] = useState<Job | null>(null);
   const [run, setRun] = useState<
     (Run & { images: Variant[] }) | null
@@ -295,6 +318,41 @@ export function ThumbnailsTab() {
     }
   };
 
+  // Own videos back the Remix picker. Loaded lazily and only for the
+  // active channel, since /api/ideation/videos is scoped to it.
+  useEffect(() => {
+    if (mode !== "remix" || channelId !== activeChannelId) return;
+    if (ownVideos.length > 0) return;
+    void (async () => {
+      const r = await fetch("/api/ideation/videos", { cache: "no-store" });
+      if (!r.ok) return;
+      const j = (await r.json()) as { videos: OwnVideo[] };
+      setOwnVideos(j.videos ?? []);
+    })();
+  }, [mode, channelId, activeChannelId, ownVideos.length]);
+
+  const startBatch = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/thumbnails/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channelId,
+          source: batchSource,
+          count: batchCount,
+          variants: Math.min(variants, 4),
+        }),
+      });
+      const j = (await r.json()) as { error?: string };
+      if (!r.ok) setError(j.error ?? "Could not start the batch.");
+      await loadRun(channelId);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const startGeneration = async (opts: { reusePrompt?: boolean } = {}) => {
     setBusy(true);
     setError(null);
@@ -307,8 +365,8 @@ export function ThumbnailsTab() {
           title,
           userNote: note || null,
           variants,
-          sourceKind: sourceId ? "idea" : "manual",
-          sourceId: sourceId ?? null,
+          sourceKind: remix ? "video_remix" : sourceId ? "idea" : "manual",
+          sourceId: remix ? remix.id : sourceId ?? null,
           prompt: opts.reusePrompt ? promptDraft : undefined,
         }),
       });
@@ -388,14 +446,77 @@ export function ThumbnailsTab() {
         busy={busy}
       />
 
+      <BrandAssetsPanel channelId={channelId} />
+
       {style?.profile && (
         <Card>
           <CardContent className="space-y-3 py-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Wand2 className="h-4 w-4" /> Generate
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Wand2 className="h-4 w-4" /> Generate
+              </div>
+              <div className="flex gap-1">
+                {(
+                  [
+                    ["title", "From a title"],
+                    ["remix", "Remix a video"],
+                    ["batch", "Batch"],
+                  ] as Array<[Mode, string]>
+                ).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setMode(m);
+                      if (m !== "remix") setRemix(null);
+                    }}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                      mode === m
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {ideas.length > 0 && (
+            {mode === "batch" && (
+              <BatchControls
+                source={batchSource}
+                setSource={setBatchSource}
+                count={batchCount}
+                setCount={setBatchCount}
+                perTitle={Math.min(variants, 4)}
+                estimateCents={
+                  estimateCents !== null
+                    ? (estimateCents / variants) * Math.min(variants, 4) * batchCount
+                    : null
+                }
+                onStart={startBatch}
+                disabled={busy || anyRunning || !provider}
+                running={anyRunning}
+              />
+            )}
+
+            {mode === "remix" && (
+              <RemixPicker
+                videos={ownVideos}
+                query={videoQuery}
+                setQuery={setVideoQuery}
+                selected={remix}
+                onSelect={(v) => {
+                  setRemix(v);
+                  setTitle(v.title);
+                  setSourceId(null);
+                }}
+                sameChannel={channelId === activeChannelId}
+              />
+            )}
+
+            {mode === "title" && ideas.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {ideas.slice(0, 12).map((idea) => (
                   <button
@@ -420,22 +541,31 @@ export function ThumbnailsTab() {
               </div>
             )}
 
-            <Input
-              value={title}
-              placeholder="Video title — what is this thumbnail for?"
-              onChange={(e) => {
-                setTitle(e.target.value);
-                setSourceId(null);
-              }}
-            />
-            <Textarea
-              value={note}
-              rows={2}
-              placeholder="Optional: anything the generator should know (a specific subject, a colour to avoid…)"
-              onChange={(e) => setNote(e.target.value)}
-            />
+            {mode !== "batch" && (
+              <>
+                <Input
+                  value={title}
+                  placeholder="Video title — what is this thumbnail for?"
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setSourceId(null);
+                  }}
+                />
+                <Textarea
+                  value={note}
+                  rows={2}
+                  placeholder="Optional: anything the generator should know (a specific subject, a colour to avoid…)"
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </>
+            )}
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-3",
+                mode === "batch" && "hidden"
+              )}
+            >
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 Variants
                 <input
@@ -505,6 +635,172 @@ export function ThumbnailsTab() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Zero-input batch. Deliberately spells out how many images this will
+ * produce and what that costs before the button is reachable — it is the
+ * one control in the app that spends money on titles the user did not
+ * type.
+ */
+function BatchControls({
+  source,
+  setSource,
+  count,
+  setCount,
+  perTitle,
+  estimateCents,
+  onStart,
+  disabled,
+  running,
+}: {
+  source: "ideas" | "signals";
+  setSource: (s: "ideas" | "signals") => void;
+  count: number;
+  setCount: (n: number) => void;
+  perTitle: number;
+  estimateCents: number | null;
+  onStart: () => void;
+  disabled: boolean;
+  running: boolean;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <p className="text-xs text-muted-foreground">
+        The app picks what to work on:{" "}
+        {source === "ideas"
+          ? "the cards that have been sitting longest in the Board's Idea column"
+          : "the hottest Niche Watch hits by views per hour, as your own take on the subject"}
+        .
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value as "ideas" | "signals")}
+          className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+        >
+          <option value="ideas">From the Board</option>
+          <option value="signals">From Signals</option>
+        </select>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          Titles
+          <input
+            type="range"
+            min={1}
+            max={5}
+            value={count}
+            onChange={(e) => setCount(Number(e.target.value))}
+            className="w-24"
+          />
+          <span className="w-3 font-medium text-foreground">{count}</span>
+        </label>
+        <Button onClick={onStart} disabled={disabled} className="gap-2">
+          {running ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4" />
+          )}
+          Generate {count * perTitle} images
+          {estimateCents !== null && (
+            <span className="opacity-80">— ~{fmtCents(estimateCents)}</span>
+          )}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {count} title{count === 1 ? "" : "s"} × {perTitle} variant
+        {perTitle === 1 ? "" : "s"}. Results land in the run history below.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Remix picker: regenerate covers for a video that already shipped.
+ * Useful as a sanity check on the generator itself — the old cover and
+ * the new one sit side by side against the same title.
+ */
+function RemixPicker({
+  videos,
+  query,
+  setQuery,
+  selected,
+  onSelect,
+  sameChannel,
+}: {
+  videos: OwnVideo[];
+  query: string;
+  setQuery: (s: string) => void;
+  selected: OwnVideo | null;
+  onSelect: (v: OwnVideo) => void;
+  sameChannel: boolean;
+}) {
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const base = q
+      ? videos.filter((v) => v.title.toLowerCase().includes(q))
+      : videos;
+    return base.slice(0, 24);
+  }, [videos, query]);
+
+  if (!sameChannel) {
+    return (
+      <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+        Remix reads the video list of the channel you&apos;re working in.
+        Switch the app to this channel to use it.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Find one of your videos…"
+        className="h-8 text-xs"
+      />
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {filtered.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            onClick={() => onSelect(v)}
+            className={cn(
+              "w-32 shrink-0 rounded border p-1 text-left",
+              selected?.id === v.id ? "border-primary" : "border-transparent"
+            )}
+            title={v.title}
+          >
+            {v.thumbnail_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={v.thumbnail_url}
+                alt={v.title}
+                className="h-[68px] w-full rounded object-cover"
+              />
+            ) : (
+              <div className="h-[68px] w-full rounded bg-muted" />
+            )}
+            <div className="mt-1 line-clamp-2 text-[11px] leading-tight">
+              {v.title}
+            </div>
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <span className="text-xs text-muted-foreground">
+            No videos match.
+          </span>
+        )}
+      </div>
+      {selected && (
+        <p className="text-xs text-muted-foreground">
+          Remixing <b className="text-foreground">{selected.title}</b> — the new
+          covers use the same title, so you can compare them against the one
+          that shipped.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function ChannelPicker({
   channels,

@@ -1,45 +1,17 @@
 import { NextResponse } from "next/server";
-import fs from "node:fs";
-import path from "node:path";
 import {
-  createThumbnailRun,
-  createThumbnailVariant,
-  DATA_DIR,
   getActiveChannelId,
   getActiveImageProvider,
-  getIntegration,
-  getThumbnailStyleProfile,
-  listBrandAssets,
   listThumbnailRuns,
   listThumbnailVariants,
-  setThumbnailRunCost,
 } from "@/lib/db";
-import {
-  buildGenerationPlan,
-  collectReferenceThumbnails,
-  safeSegment,
-  type ThumbnailStyleProfile,
-} from "@/lib/thumbnail-style";
-import {
-  generateImages,
-  type ImageUsage,
-  type ReferenceImage,
-} from "@/lib/image-provider";
+import { runGeneration } from "@/lib/thumbnail-generate";
+import { preflight } from "@/lib/thumbnail-preflight";
 import {
   DEFAULT_VARIANTS,
-  isImageProviderChoice,
   MAX_VARIANTS,
-  type ImageProviderChoice,
 } from "@/lib/image-provider-types";
-import { measuredRunCostCents } from "@/lib/thumbnail-pricing";
-import {
-  coerceZone,
-  DEFAULT_OVERLAY,
-  fontCovers,
-  renderOverlay,
-  uncoveredCharacters,
-  type OverlaySpec,
-} from "@/lib/thumbnail-overlay";
+import { coerceZone } from "@/lib/thumbnail-overlay-types";
 import {
   finishJob,
   isJobRunning,
@@ -47,24 +19,20 @@ import {
   progressJob,
   readJob,
   startJob,
+  THUMBNAIL_GEN_JOB,
 } from "@/lib/settings-job";
 import { log } from "@/lib/logger";
 
 /**
- * Thumbnail generation.
+ * Thumbnail generation for one title.
  *
  * POST starts a survivable job; GET reports its progress plus the latest
- * run's variants. The job writes progress after every variant so a
- * reload mid-run shows "2 of 4" rather than starting over.
- *
- * A failed variant is recorded and the run continues — one refused
- * prompt shouldn't cost the user the other three images they paid for.
+ * run's variants. The work itself lives in `thumbnail-generate.ts` so
+ * the batch route runs byte-for-byte the same pipeline.
  */
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-const JOB_BASE = "thumbnail.gen.job";
 
 type Body = {
   channelId?: unknown;
@@ -73,13 +41,13 @@ type Body = {
   title?: unknown;
   userNote?: unknown;
   variants?: unknown;
-  /** Supplied when re-running an edited prompt — skips the planning call. */
   prompt?: unknown;
   overlayText?: unknown;
   zone?: unknown;
 };
 
 const SOURCE_KINDS = ["idea", "signal", "video_remix", "manual"] as const;
+type SourceKind = (typeof SOURCE_KINDS)[number];
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -88,13 +56,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
   }
 
-  const runs = listThumbnailRuns(channelId, 1);
-  const latest = runs[0];
-  const provider = getActiveImageProvider();
+  const latest = listThumbnailRuns(channelId, 1)[0];
 
   return NextResponse.json({
     channelId,
-    job: readJob(jobKey(JOB_BASE, channelId)),
+    job: readJob(jobKey(THUMBNAIL_GEN_JOB, channelId)),
     latestRun: latest
       ? {
           ...latest,
@@ -102,7 +68,7 @@ export async function GET(req: Request) {
           variants: listThumbnailVariants(latest.id),
         }
       : null,
-    hasProvider: !!provider,
+    hasProvider: !!getActiveImageProvider(),
   });
 }
 
@@ -139,57 +105,20 @@ export async function POST(req: Request) {
     );
   }
 
-  const sourceKind =
+  const pre = preflight(channelId);
+  if (!pre.ok) {
+    return NextResponse.json({ error: pre.error }, { status: pre.status });
+  }
+
+  const sourceKind: SourceKind =
     typeof body.sourceKind === "string" &&
     (SOURCE_KINDS as readonly string[]).includes(body.sourceKind)
-      ? body.sourceKind
+      ? (body.sourceKind as SourceKind)
       : "manual";
-
-  const claudeKey = getIntegration("claude")?.api_key;
-  if (!claudeKey) {
-    return NextResponse.json(
-      { error: "Claude API key is not configured. Add it in Integrations." },
-      { status: 400 }
-    );
-  }
-
-  const providerRow = getActiveImageProvider();
-  if (!providerRow) {
-    return NextResponse.json(
-      {
-        error:
-          "No image provider is configured. Add one in Integrations and make it active.",
-      },
-      { status: 400 }
-    );
-  }
-  const provider: ImageProviderChoice = isImageProviderChoice(providerRow.provider)
-    ? providerRow.provider
-    : "gemini";
-
-  const profileRow = getThumbnailStyleProfile(channelId);
-  if (!profileRow) {
-    return NextResponse.json(
-      {
-        error:
-          "Analyse this channel's thumbnail style first — generation without it would be guesswork.",
-      },
-      { status: 400 }
-    );
-  }
-  let profile: ThumbnailStyleProfile;
-  try {
-    profile = JSON.parse(profileRow.profile_json) as ThumbnailStyleProfile;
-  } catch {
-    return NextResponse.json(
-      { error: "The stored style profile is unreadable — re-run the analysis." },
-      { status: 400 }
-    );
-  }
 
   const variants = clampInt(body.variants, DEFAULT_VARIANTS, 1, MAX_VARIANTS);
 
-  const key = jobKey(JOB_BASE, channelId);
+  const key = jobKey(THUMBNAIL_GEN_JOB, channelId);
   if (isJobRunning(key)) {
     return NextResponse.json(
       { error: "A generation is already running for this channel." },
@@ -200,217 +129,60 @@ export async function POST(req: Request) {
   startJob(key, variants, "planning");
   log.info("thumbnails", "Generation started", {
     channelId,
-    provider,
-    model: providerRow.model,
+    provider: pre.providerRow.provider,
+    model: pre.providerRow.model,
     variants,
     title,
   });
 
+  // Fire-and-forget: the run finishes on the server whether or not the
+  // tab stays open.
   void (async () => {
     try {
-      const refs = await collectReferenceThumbnails(channelId);
-      const styleRefs: ReferenceImage[] = [
-        ...refs.own.map((r) => ({
-          bytes: r.bytes,
-          mimeType: r.mimeType,
-          label: `own:${r.videoId} ${r.multiplier.toFixed(1)}x`,
-        })),
-        ...refs.competitor.map((r) => ({
-          bytes: r.bytes,
-          mimeType: r.mimeType,
-          label: `competitor:${r.videoId} ${r.multiplier.toFixed(1)}x`,
-        })),
-      ];
-
-      const assets = listBrandAssets(channelId).filter((a) => a.kind !== "font");
-      const characterRefs: ReferenceImage[] = [];
-      for (const asset of assets) {
-        try {
-          const abs = path.join(DATA_DIR, asset.file_path);
-          characterRefs.push({
-            bytes: fs.readFileSync(abs),
-            mimeType: mimeFromPath(asset.file_path),
-            label: `${asset.kind}:${asset.label ?? asset.id}`,
-          });
-        } catch (err) {
-          log.warn("thumbnails", "Brand asset unreadable, skipping", {
-            assetId: asset.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-
-      // The headline decides whether we composite the text or make the
-      // image model draw it: our bundled font covers Latin, Cyrillic and
-      // Greek, and silently rendering tofu boxes for anything else would
-      // be worse than handing the job to the model.
-      const provisionalHeadline =
-        typeof body.overlayText === "string" && body.overlayText.trim()
-          ? body.overlayText.trim()
-          : title;
-      const modelRendersText = !fontCovers(provisionalHeadline);
-
-      progressJob(key, { stage: "writing the prompt" });
-
-      const reusedPrompt =
-        typeof body.prompt === "string" && body.prompt.trim()
-          ? body.prompt.trim()
-          : null;
-
-      const plan = reusedPrompt
-        ? {
-            prompt: reusedPrompt,
-            overlayCandidates: [provisionalHeadline],
-            zone: coerceZone(body.zone ?? profile.composition.textZone),
-          }
-        : await buildGenerationPlan({
-            apiKey: claudeKey,
-            profile,
-            title,
-            userNote:
-              typeof body.userNote === "string" ? body.userNote : null,
-            brandAssetDescriptions: assets.map(
-              (a) => `${a.kind}${a.label ? ` (${a.label})` : ""}`
-            ),
-            headlineZone: body.zone ? coerceZone(body.zone) : undefined,
-            modelRendersText,
-          });
-
-      const headline =
-        typeof body.overlayText === "string" && body.overlayText.trim()
-          ? body.overlayText.trim()
-          : plan.overlayCandidates[0] ?? title;
-
-      const runId = createThumbnailRun({
+      const result = await runGeneration({
         channelId,
+        claudeKey: pre.claudeKey,
+        providerRow: pre.providerRow,
+        profile: pre.profile,
+        title,
         sourceKind,
         sourceId:
           typeof body.sourceId === "string" || typeof body.sourceId === "number"
             ? String(body.sourceId)
             : null,
-        title,
-        prompt: plan.prompt,
-        provider,
-        model: providerRow.model ?? "",
+        userNote: typeof body.userNote === "string" ? body.userNote : null,
         variants,
-        referenceIds: [
-          ...refs.own.map((r) => r.videoId),
-          ...refs.competitor.map((r) => r.videoId),
-        ],
+        reusePrompt: typeof body.prompt === "string" ? body.prompt : null,
+        overlayText:
+          typeof body.overlayText === "string" ? body.overlayText : null,
+        zone: body.zone !== undefined ? coerceZone(body.zone) : null,
+        onProgress: (p) =>
+          progressJob(key, {
+            stage: p.stage,
+            done: p.done,
+            failed: p.failed,
+            resultId: p.runId ?? null,
+            lastError: p.lastError ?? null,
+          }),
       });
-      progressJob(key, { resultId: runId, stage: "generating" });
-
-      const runDir = path.join(
-        DATA_DIR,
-        "thumbnails",
-        safeSegment(channelId),
-        String(runId)
-      );
-      fs.mkdirSync(runDir, { recursive: true });
-
-      const overlaySpec: OverlaySpec = {
-        ...DEFAULT_OVERLAY,
-        text: headline,
-        zone: plan.zone,
-        uppercase: profile.textTreatment.uppercase,
-        stroke: profile.textTreatment.stroke,
-        shadow: profile.textTreatment.shadow,
-      };
-
-      const usages: Array<ImageUsage | undefined> = [];
-      let done = 0;
-      let failed = 0;
-      let lastError: string | null = null;
-
-      for (let i = 0; i < variants; i++) {
-        try {
-          const { images } = await generateImages({
-            provider,
-            apiKey: providerRow.api_key,
-            model: providerRow.model ?? "",
-            prompt: plan.prompt,
-            styleRefs,
-            characterRefs,
-            count: 1,
-          });
-          const image = images[0];
-          usages.push(image.usage);
-
-          const baseRel = path.posix.join(
-            "thumbnails",
-            safeSegment(channelId),
-            String(runId),
-            `${i}-base.png`
-          );
-          fs.writeFileSync(path.join(DATA_DIR, baseRel), image.bytes);
-
-          let finalRel: string | null = null;
-          let overlayJson: string | null = null;
-          if (modelRendersText) {
-            // The model drew the headline itself — compositing on top of
-            // it would double the text.
-            finalRel = baseRel;
-          } else {
-            const composited = await renderOverlay(image.bytes, overlaySpec);
-            finalRel = path.posix.join(
-              "thumbnails",
-              safeSegment(channelId),
-              String(runId),
-              `${i}-final.png`
-            );
-            fs.writeFileSync(path.join(DATA_DIR, finalRel), composited);
-            overlayJson = JSON.stringify(overlaySpec);
-          }
-
-          createThumbnailVariant({
-            runId,
-            idx: i,
-            basePath: baseRel,
-            finalPath: finalRel,
-            overlayJson,
-          });
-          done++;
-        } catch (err) {
-          failed++;
-          lastError = err instanceof Error ? err.message : String(err);
-          createThumbnailVariant({ runId, idx: i, error: lastError });
-          log.warn("thumbnails", "Variant failed", {
-            channelId,
-            runId,
-            index: i,
-            error: lastError,
-          });
-        }
-        progressJob(key, { done, failed, lastError, stage: "generating" });
-      }
-
-      // Cost is recorded only from what the provider actually reported.
-      // When it reports nothing, the column stays NULL and the UI says
-      // so, rather than passing the estimate off as measured.
-      const cost = measuredRunCostCents(
-        provider,
-        providerRow.model ?? "",
-        usages
-      );
-      if (cost !== null) setThumbnailRunCost(runId, cost);
 
       finishJob(key, {
-        done,
-        failed,
-        lastError,
-        resultId: runId,
-        stage: modelRendersText
-          ? `done — text drawn by the model (${uncoveredCharacters(headline)
+        done: result.done,
+        failed: result.failed,
+        lastError: result.lastError,
+        resultId: result.runId,
+        stage: result.modelRendersText
+          ? `done — text drawn by the model (${result.uncovered
               .slice(0, 6)
-              .join("")} is outside the bundled font)`
+              .join("")} is outside the available font)`
           : "done",
       });
       log.info("thumbnails", "Generation finished", {
         channelId,
-        runId,
-        done,
-        failed,
-        costCents: cost,
+        runId: result.runId,
+        done: result.done,
+        failed: result.failed,
+        costCents: result.costCents,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -428,9 +200,3 @@ function clampInt(v: unknown, fallback: number, min: number, max: number): numbe
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-function mimeFromPath(p: string): string {
-  const ext = path.extname(p).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".webp") return "image/webp";
-  return "image/jpeg";
-}
