@@ -445,6 +445,37 @@ empty on the next `npm run dev`.
   and the pre-checks to `lib/thumbnail-preflight.ts`, so single, remix
   and batch runs are the same code path rather than three that drift.
 
+### Dry run — the whole pipeline, verified without keys
+
+`THUMBNAILS_DRY_RUN=1` replaces every paid call with a local stand-in:
+the style analysis returns a placeholder profile, the prompt builder a
+deterministic prompt, the image provider a locally drawn cover stamped
+DRY RUN. Everything else runs for real. It exists because the two halves
+of this feature fail differently — the half that talks to Anthropic and
+an image provider can only be proven with a live key, while the half
+that is plumbing is most of the code and needs no key at all.
+
+Run end to end this way on a seeded channel:
+
+| Step | Result |
+|---|---|
+| Style analysis job | Completed, profile stored, `lowConfidence=false` at 6 winners, caveat says plainly that no thumbnails were looked at |
+| Generate, 3 variants | Job reached 3/3, three distinct PNGs written, headline composited at the profile's zone, `cost_cents` correctly NULL |
+| Batch from the Board | 2 titles × 2 variants → 2 runs, 4 images |
+| Concurrency guard | Generate during a batch → 409 |
+| Pick → Board | Idea card carries `thumbnail_path`; the other card stays null |
+| Delete a run | Rows and all 6 PNGs gone, folder removed, unknown id → 404 |
+| UI | Screenshotted: tab, dry-run banner, basis panel with per-trait `(n=…)`, brand assets, three generate modes, history with spend and per-run cost |
+
+The dry-run banner is deliberate: an image stamped DRY RUN can be
+cropped, so the tab says it too.
+
+Also added in this pass: **run history** in the UI with recorded spend
+(the API existed with nothing rendering it), **run deletion** including
+the PNGs on disk, and an **image-generation section in INSTALL.md**
+covering provider choice, published rates, and the fact that nothing
+generates without a click.
+
 **Still not built:** Shorts 9:16 and layer export (both P2, and Shorts
 waits on knowing whether Eric ships any).
 

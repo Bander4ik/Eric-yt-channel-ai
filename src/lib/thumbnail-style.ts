@@ -12,6 +12,7 @@ import {
 import { costMillicents } from "./claude-pricing";
 import { log } from "./logger";
 import { coerceZone, type TextZone } from "./thumbnail-overlay";
+import { dryRunProfile, dryRunPrompt, isDryRun } from "./thumbnail-dryrun";
 
 /**
  * Where a channel's thumbnail style comes from, and how it turns into a
@@ -254,6 +255,16 @@ export async function analyseThumbnailStyle(input: {
     );
   }
 
+  if (isDryRun()) {
+    return {
+      profile: dryRunProfile({
+        ownIds: input.own.map((r) => r.videoId),
+        competitorIds: input.competitor.map((r) => r.videoId),
+      }),
+      model: "dry-run",
+    };
+  }
+
   const content: Anthropic.MessageParam["content"] = [];
   for (const ref of all) {
     content.push({
@@ -400,6 +411,14 @@ export async function buildGenerationPlan(input: {
    *  model has to draw the text itself. Changes the prompt materially. */
   modelRendersText: boolean;
 }): Promise<GenerationPlan> {
+  if (isDryRun()) {
+    return {
+      prompt: dryRunPrompt(input.title),
+      overlayCandidates: [input.title],
+      zone: input.headlineZone ?? input.profile.composition.textZone,
+    };
+  }
+
   const client = new Anthropic({ apiKey: input.apiKey });
   const started = Date.now();
 

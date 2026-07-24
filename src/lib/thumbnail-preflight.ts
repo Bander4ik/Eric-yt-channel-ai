@@ -6,6 +6,19 @@ import {
   type ImageProviderRow,
 } from "./db";
 import type { ThumbnailStyleProfile } from "./thumbnail-style";
+import { isDryRun } from "./thumbnail-dryrun";
+
+/** Stand-in row so a dry run doesn't need a stored provider. */
+const DRY_RUN_PROVIDER: ImageProviderRow = {
+  id: -1,
+  provider: "gemini",
+  label: "Dry run",
+  api_key: "dry-run",
+  model: "dry-run",
+  is_active: 1,
+  created_at: 0,
+  updated_at: 0,
+};
 
 /**
  * Everything a generation needs before it is allowed to start, checked
@@ -27,7 +40,12 @@ export type Preflight =
   | { ok: false; error: string; status: number };
 
 export function preflight(channelId: string): Preflight {
-  const claudeKey = getIntegration("claude")?.api_key;
+  // In dry-run mode nothing is called, so demanding keys would only stop
+  // the plumbing from being exercised. Every other check still applies —
+  // a dry run with no style profile should fail exactly like a real one.
+  const dry = isDryRun();
+
+  const claudeKey = getIntegration("claude")?.api_key ?? (dry ? "dry-run" : null);
   if (!claudeKey) {
     return {
       ok: false,
@@ -36,7 +54,7 @@ export function preflight(channelId: string): Preflight {
     };
   }
 
-  const providerRow = getActiveImageProvider();
+  const providerRow = getActiveImageProvider() ?? (dry ? DRY_RUN_PROVIDER : null);
   if (!providerRow) {
     return {
       ok: false,

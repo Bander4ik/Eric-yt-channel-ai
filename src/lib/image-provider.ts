@@ -6,6 +6,7 @@ import {
   THUMBNAIL_WIDTH,
   type ImageProviderChoice,
 } from "./image-provider-types";
+import { dryRunImage, isDryRun } from "./thumbnail-dryrun";
 
 /**
  * Image-generation provider abstraction, shaped after `ai-provider.ts`.
@@ -88,6 +89,19 @@ export async function generateImages(
 ): Promise<{ images: GeneratedImage[]; errors: string[] }> {
   const images: GeneratedImage[] = [];
   const errors: string[] = [];
+
+  // THUMBNAILS_DRY_RUN=1 short-circuits before any network call so the
+  // rest of the pipeline can be exercised without a key. No usage is
+  // reported, so the run correctly records no cost.
+  if (isDryRun()) {
+    for (let i = 0; i < opts.count; i++) {
+      images.push({
+        bytes: dryRunImage(i, opts.prompt),
+        mimeType: "image/png",
+      });
+    }
+    return { images, errors };
+  }
 
   for (let i = 0; i < opts.count; i++) {
     try {

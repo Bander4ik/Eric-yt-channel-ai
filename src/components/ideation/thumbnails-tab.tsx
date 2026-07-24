@@ -13,6 +13,7 @@ import {
   Plug,
   RefreshCw,
   Sparkles,
+  Trash2,
   Users,
   Wand2,
 } from "lucide-react";
@@ -160,6 +161,25 @@ type OwnVideo = {
  */
 type Mode = "title" | "remix" | "batch";
 
+type HistoryRun = {
+  id: number;
+  title: string;
+  provider: string;
+  model: string;
+  sourceKind: string;
+  variants: number;
+  costCents: number | null;
+  createdAt: number;
+  images: Variant[];
+};
+
+type Spend = {
+  totalCents: number;
+  runs: number;
+  runsWithoutCost: number;
+  images: number;
+};
+
 function fileUrl(rel: string): string {
   return `/api/thumbnails/file/${rel.split("/").map(encodeURIComponent).join("/")}`;
 }
@@ -186,6 +206,7 @@ export function ThumbnailsTab() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dryRun, setDryRun] = useState(false);
 
   const [mode, setMode] = useState<Mode>("title");
   const [title, setTitle] = useState("");
@@ -230,8 +251,10 @@ export function ThumbnailsTab() {
     const j = (await r.json()) as {
       job: Job | null;
       latestRun: (Run & { variants: Variant[] | number }) | null;
+      dryRun?: boolean;
     };
     setGenJob(j.job);
+    setDryRun(!!j.dryRun);
     if (j.latestRun) {
       const images = Array.isArray(j.latestRun.variants)
         ? (j.latestRun.variants as unknown as Variant[])
@@ -438,7 +461,21 @@ export function ThumbnailsTab() {
         </Card>
       )}
 
-      <ProviderBanner provider={provider} />
+      {dryRun ? (
+        <Card className="border-amber-500/40">
+          <CardContent className="flex items-start gap-2 py-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" />
+            <span>
+              <b>Dry run.</b> THUMBNAILS_DRY_RUN=1 is set, so nothing here calls
+              Claude or an image provider: the style profile is a placeholder
+              and every cover is drawn locally and stamped DRY RUN. Unset it in
+              your <code>.env</code> for real generation.
+            </span>
+          </CardContent>
+        </Card>
+      ) : (
+        <ProviderBanner provider={provider} />
+      )}
 
       <BasisPanel
         style={style}
@@ -610,6 +647,12 @@ export function ThumbnailsTab() {
         </Card>
       )}
 
+      <HistoryPanel
+        channelId={channelId}
+        reloadKey={run?.id ?? 0}
+        onDeleted={() => void loadRun(channelId)}
+      />
+
       {run && run.images.length > 0 && (
         <>
           <ResultGrid
@@ -635,6 +678,134 @@ export function ThumbnailsTab() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Everything generated for this channel so far, with what each run cost.
+ *
+ * Collapsed by default — it is reference, not the working surface — but
+ * it is the only place the user can see spend accumulating and drop runs
+ * they don't want, so it is never hidden behind a setting.
+ */
+function HistoryPanel({
+  channelId,
+  reloadKey,
+  onDeleted,
+}: {
+  channelId: string | null;
+  reloadKey: number;
+  onDeleted: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [runs, setRuns] = useState<HistoryRun[]>([]);
+  const [spend, setSpend] = useState<Spend | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!channelId) return;
+    const r = await fetch(
+      `/api/thumbnails/runs?channelId=${encodeURIComponent(channelId)}`,
+      { cache: "no-store" }
+    );
+    if (!r.ok) return;
+    const j = (await r.json()) as { runs: HistoryRun[]; spend: Spend };
+    setRuns(j.runs);
+    setSpend(j.spend);
+  }, [channelId]);
+
+  useEffect(() => {
+    void load();
+  }, [load, reloadKey]);
+
+  const remove = async (id: number) => {
+    setBusy(true);
+    try {
+      await fetch(`/api/thumbnails/runs/${id}`, { method: "DELETE" });
+      await load();
+      onDeleted();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (runs.length === 0) return null;
+
+  return (
+    <Card>
+      <CardContent className="py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center gap-2 text-sm font-medium"
+        >
+          <ChevronDown
+            className={cn("h-4 w-4 transition-transform", open && "rotate-180")}
+          />
+          History — {runs.length} run{runs.length === 1 ? "" : "s"}
+          {spend && (
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {spend.images} image{spend.images === 1 ? "" : "s"} ·{" "}
+              {spend.totalCents > 0
+                ? `${fmtCents(spend.totalCents)} recorded`
+                : "no cost recorded"}
+              {spend.runsWithoutCost > 0 &&
+                ` · ${spend.runsWithoutCost} run${
+                  spend.runsWithoutCost === 1 ? "" : "s"
+                } reported no usage`}
+            </span>
+          )}
+        </button>
+
+        {open && (
+          <div className="mt-3 space-y-2">
+            {runs.map((r) => (
+              <div
+                key={r.id}
+                className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-xs"
+              >
+                <div className="flex gap-1">
+                  {r.images
+                    .filter((v) => v.final_path ?? v.base_path)
+                    .slice(0, 4)
+                    .map((v) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={v.id}
+                        src={fileUrl((v.final_path ?? v.base_path)!)}
+                        alt=""
+                        className={cn(
+                          "h-9 w-16 rounded object-cover",
+                          v.picked === 1 && "ring-2 ring-emerald-500"
+                        )}
+                      />
+                    ))}
+                </div>
+                <div className="min-w-[8rem] flex-1">
+                  <div className="truncate font-medium">{r.title}</div>
+                  <div className="text-muted-foreground">
+                    {new Date(r.createdAt * 1000).toLocaleString()} ·{" "}
+                    {r.sourceKind} · {r.model}
+                  </div>
+                </div>
+                <span className="text-muted-foreground">
+                  {r.costCents !== null ? fmtCents(r.costCents) : "no cost data"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => remove(r.id)}
+                  disabled={busy}
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label="Delete run"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 /**
  * Zero-input batch. Deliberately spells out how many images this will
@@ -978,6 +1149,13 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 function WinnerStrip({ winners }: { winners: Winner[] }) {
+  // A thumbnail can 404 — a deleted or private video, or a CDN hiccup —
+  // and the browser's broken-image icon reads as "this app is broken".
+  // Track the failures and render a neutral block instead. State rather
+  // than an inline onError style tweak, because the handler can miss an
+  // image that failed before React attached to it.
+  const [broken, setBroken] = useState<Record<string, boolean>>({});
+
   return (
     <div className="flex gap-2 overflow-x-auto pb-1">
       {winners.slice(0, 16).map((w) => (
@@ -989,17 +1167,22 @@ function WinnerStrip({ winners }: { winners: Winner[] }) {
           className="group w-32 shrink-0"
           title={`${w.title} — ${w.multiplier}x, ${fmtCompact(w.views)} views (${w.sourceLabel})`}
         >
-          {w.thumbnailUrl ? (
+          {w.thumbnailUrl && !broken[w.videoId] ? (
             // Plain img: these are remote YouTube CDN URLs and the app
             // runs locally without an image optimiser configured.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={w.thumbnailUrl}
               alt={w.title}
-              className="h-[72px] w-32 rounded object-cover"
+              className="h-[72px] w-32 rounded bg-muted object-cover"
+              onError={() =>
+                setBroken((prev) => ({ ...prev, [w.videoId]: true }))
+              }
             />
           ) : (
-            <div className="h-[72px] w-32 rounded bg-muted" />
+            <div className="flex h-[72px] w-32 items-center justify-center rounded bg-muted px-1 text-center text-[10px] leading-tight text-muted-foreground">
+              {w.title.slice(0, 40)}
+            </div>
           )}
           <div className="mt-1 flex items-center gap-1 text-[11px]">
             <span className="rounded bg-emerald-500/15 px-1 font-medium text-emerald-700 dark:text-emerald-400">

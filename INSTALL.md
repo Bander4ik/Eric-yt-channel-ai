@@ -208,6 +208,24 @@ Apify is useful if Deepgram + yt-dlp fails for some reason, and for scraping com
 
 Same pattern. Self-explanatory help text is on each card in the Integrations page (click "How to get an X API key" to expand the steps).
 
+### 4.7 Image generation — OPTIONAL, needed only for generated thumbnails
+
+Only required if you want the app to **generate thumbnails** for you (Ideation → Thumbnails). Everything else works without it.
+
+Scroll to the **Image generation** section at the bottom of the Integrations page and click **Add**. Pick one provider, paste its key, click **Save**:
+
+| Provider | Where to get a key | Roughly per image |
+|---|---|---|
+| Google Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | $0.13 (Pro) / $0.07 (Flash) |
+| OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | ~$0.06 |
+| fal.ai | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) | ~$0.035 |
+
+Those prices are the providers' published rates and are shown as an **estimate** on the Generate button. After each run the app records what the provider actually reported, and the History panel shows both — trust the recorded number.
+
+You can add **several** keys (even two of the same provider) and switch which one is active with **Use this**. Only the active one is ever called. The Thumbnails tab always shows which provider and key it will use.
+
+> **Nothing generates by itself.** Images are only ever produced when you click a Generate button. Closing the app or leaving the tab never starts a run.
+
 ---
 
 ## Part 5 — Add your first YouTube channel
@@ -228,6 +246,7 @@ Same pattern. Self-explanatory help text is on each card in the Integrations pag
 - **AI Chat** — talk to Claude about your channel; attach videos to focus the conversation.
 - **Hook Lab** — auto-scores the opening of every video on 7 dimensions (curiosity, value promise, conflict, specific language, identification, pacing, benefit).
 - **Competitors** — track other channels, sync their videos.
+- **Ideation → Thumbnails** — generate video covers in the style that measurably works on your channel. Click **Analyse what works here** once (it reads your best-performing thumbnails and your competitors'), then generate covers for a title, remix a video you already published, or let the app pick from your Board. It always shows which videos the result was based on. Needs an image-generation key — see 4.7.
 - **Logs** — every API call, error, and event in chronological order. Handy for debugging.
 
 ---

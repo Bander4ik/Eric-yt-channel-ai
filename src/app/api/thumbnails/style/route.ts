@@ -26,6 +26,7 @@ import {
   startJob,
   THUMBNAIL_STYLE_JOB,
 } from "@/lib/settings-job";
+import { dryRunProfile, isDryRun } from "@/lib/thumbnail-dryrun";
 import { log } from "@/lib/logger";
 
 /**
@@ -116,7 +117,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
   }
 
-  const apiKey = getIntegration("claude")?.api_key;
+  // Dry run calls no model, so a missing key must not block the plumbing
+  // from being exercised (see thumbnail-dryrun.ts).
+  const apiKey =
+    getIntegration("claude")?.api_key ?? (isDryRun() ? "dry-run" : null);
   if (!apiKey) {
     return NextResponse.json(
       { error: "Claude API key is not configured. Add it in Integrations." },
@@ -166,22 +170,39 @@ export async function POST(req: Request) {
         stage: `analysing ${refs.own.length + refs.competitor.length} thumbnails`,
       });
 
-      const { profile, model } = await analyseThumbnailStyle({
-        apiKey,
-        own: refs.own,
-        competitor: refs.competitor,
-      });
+      // A dry run against a seeded database has no real thumbnails to
+      // download, so fall back to the winner ids themselves — the point
+      // is to exercise the pipeline, not to pretend images were read.
+      const dryWithoutImages =
+        isDryRun() && refs.own.length + refs.competitor.length === 0;
+
+      const ownIds = dryWithoutImages
+        ? listOwnThumbnailWinners(channelId, MAX_OWN_REFS).map((w) => w.videoId)
+        : refs.own.map((r) => r.videoId);
+      const competitorIds = dryWithoutImages
+        ? listCompetitorThumbnailWinners(channelId, MAX_COMPETITOR_REFS).map(
+            (w) => w.videoId
+          )
+        : refs.competitor.map((r) => r.videoId);
+
+      const { profile, model } = dryWithoutImages
+        ? { profile: dryRunProfile({ ownIds, competitorIds }), model: "dry-run" }
+        : await analyseThumbnailStyle({
+            apiKey,
+            own: refs.own,
+            competitor: refs.competitor,
+          });
 
       // Confidence is decided by OUR winner count, not by the model's
       // self-assessment — the whole point of the n>=5 bar is that the
       // thing being measured doesn't get to grade itself.
-      const lowConfidence = refs.own.length < MIN_WINNERS;
+      const lowConfidence = ownIds.length < MIN_WINNERS;
 
       saveThumbnailStyleProfile({
         channelId,
         profileJson: JSON.stringify(profile),
-        ownVideoIds: refs.own.map((r) => r.videoId),
-        competitorVideoIds: refs.competitor.map((r) => r.videoId),
+        ownVideoIds: ownIds,
+        competitorVideoIds: competitorIds,
         lowConfidence,
         model,
       });
@@ -192,9 +213,10 @@ export async function POST(req: Request) {
       });
       log.info("thumbnails", "Style analysis finished", {
         channelId,
-        own: refs.own.length,
-        competitor: refs.competitor.length,
+        own: ownIds.length,
+        competitor: competitorIds.length,
         lowConfidence,
+        model,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

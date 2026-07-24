@@ -12,6 +12,7 @@ import {
   MAX_VARIANTS,
 } from "@/lib/image-provider-types";
 import { coerceZone } from "@/lib/thumbnail-overlay-types";
+import { isDryRun } from "@/lib/thumbnail-dryrun";
 import {
   finishJob,
   isJobRunning,
@@ -69,6 +70,10 @@ export async function GET(req: Request) {
         }
       : null,
     hasProvider: !!getActiveImageProvider(),
+    // Surfaced so the tab can say so out loud. A user who left
+    // THUMBNAILS_DRY_RUN set and forgot must not mistake placeholders
+    // for real covers.
+    dryRun: isDryRun(),
   });
 }
 
