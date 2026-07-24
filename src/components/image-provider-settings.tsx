@@ -162,7 +162,10 @@ export function ImageProviderSettings() {
               >
                 {IMAGE_MODELS[provider].map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.label} — ~${(m.estimateCents / 100).toFixed(2)}/image
+                    {m.label}
+                    {m.estimateCents !== null
+                      ? ` — ~$${(m.estimateCents / 100).toFixed(2)}/image`
+                      : " — price not published"}
                   </option>
                 ))}
               </select>

@@ -476,6 +476,43 @@ the PNGs on disk, and an **image-generation section in INSTALL.md**
 covering provider choice, published rates, and the fact that nothing
 generates without a click.
 
+### kie.ai added as a fourth provider
+
+Requested by the product owner because it has a free tier. It is an API
+aggregator rather than a first-party provider, and it differs from the
+other three in three ways that the code has to respect:
+
+- **Async.** `POST https://api.kie.ai/api/v1/jobs/createTask` returns a
+  `taskId`; the result comes from polling
+  `GET /api/v1/jobs/recordInfo?taskId=…` until `state` leaves
+  `waiting`/`queuing`/`generating`. We poll rather than use their
+  callback because this app runs on a laptop with no public URL.
+- **HTTP 200 is not success.** kie answers 200 with a non-200 `code` in
+  the body for things like a bad key or an exhausted free tier, so the
+  body is checked as well as the status.
+- **References are URLs, not bytes.** `image_input` takes URLs. Our
+  winners are public YouTube thumbnails, so they pass straight through —
+  but locally uploaded brand assets cannot be sent, hence
+  `maxCharacterRefs: 0` on the kie models.
+
+Two models exposed: `nano-banana-pro` (takes reference images) and
+`google/nano-banana` (text-to-image only on that endpoint, ~$0.02).
+kie publishes no per-image price for the Pro model, so its
+`estimateCents` is `null`, the button says "cost unknown", the run
+records no cost, and the credits kie reported go to the app log. A
+guessed rate on a spend button is worse than no rate.
+
+Verified without a key: a run against kie with an invalid key reached
+their API and came back `code 401 Unauthorized`, which the app surfaced
+verbatim on the failed variant and in the job. A structurally wrong
+request would have produced a 400 or 404 instead, so the endpoint,
+headers and body shape are right. Whether a *valid* key produces a
+usable image is still open.
+
+**kie.ai does not remove the need for a Claude key.** The style analysis
+is Claude vision and the prompt builder is Claude text; kie only draws
+the picture.
+
 **Still not built:** Shorts 9:16 and layer export (both P2, and Shorts
 waits on knowing whether Eric ships any).
 

@@ -216,9 +216,12 @@ Scroll to the **Image generation** section at the bottom of the Integrations pag
 
 | Provider | Where to get a key | Roughly per image |
 |---|---|---|
+| kie.ai | [kie.ai/api-key](https://kie.ai/api-key) | free credits on signup, then ~$0.02 |
 | Google Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | $0.13 (Pro) / $0.07 (Flash) |
 | OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | ~$0.06 |
 | fal.ai | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) | ~$0.035 |
+
+kie.ai is the cheapest way to try this and gives new accounts free credits. Two things to know about it: it can't use brand assets you upload (it only accepts reference images that are already public on the web, which your own thumbnails are), and it doesn't publish a price for its Nano Banana Pro model, so the app shows "cost unknown" for that one instead of guessing.
 
 Those prices are the providers' published rates and are shown as an **estimate** on the Generate button. After each run the app records what the provider actually reported, and the History panel shows both — trust the recorded number.
 

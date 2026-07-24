@@ -35,6 +35,12 @@ const TOKEN_RATES: Record<string, { outputPerM: number; inputPerM?: number }> = 
 const PER_IMAGE_RATES: Record<string, number> = {
   // https://pricepertoken.com/image — fal publishes per-model unit prices
   "fal-ai/bytedance/seedream/v4-5/text-to-image": 0.035,
+  // kie.ai bills in credits; Nano Banana is 4 credits at ~$0.005/credit.
+  // Nano Banana Pro is deliberately absent — kie publishes no per-image
+  // price for it, and a guessed rate in a spend column is worse than an
+  // empty one. Runs on that model record no cost and the UI says so;
+  // the credits kie reported land in the app log.
+  "google/nano-banana": 0.02,
 };
 
 /**

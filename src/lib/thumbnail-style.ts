@@ -80,6 +80,8 @@ export type ReferenceThumbnail = {
   sourceLabel: string;
   bytes: Buffer;
   mimeType: "image/jpeg" | "image/png" | "image/webp";
+  /** The URL the image actually came from — kie.ai needs URLs, not bytes. */
+  sourceUrl: string;
 };
 
 /* ------------------------------------------------------------------ *
@@ -117,16 +119,26 @@ async function fetchThumbnail(
   channelId: string,
   videoId: string,
   url: string
-): Promise<{ bytes: Buffer; mimeType: "image/jpeg" | "image/png" | "image/webp" }> {
+): Promise<{
+  bytes: Buffer;
+  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  sourceUrl: string;
+}> {
   const dir = refsDir(channelId);
   fs.mkdirSync(dir, { recursive: true });
   const cached = path.join(dir, `${safeSegment(videoId)}.img`);
   const metaFile = `${cached}.type`;
+  const urlFile = `${cached}.url`;
 
   if (fs.existsSync(cached) && fs.existsSync(metaFile)) {
     return {
       bytes: fs.readFileSync(cached),
       mimeType: mediaTypeFor(fs.readFileSync(metaFile, "utf8")),
+      // Which candidate URL actually worked is cached too, so a later
+      // run that needs the URL (kie.ai) doesn't have to re-probe.
+      sourceUrl: fs.existsSync(urlFile)
+        ? fs.readFileSync(urlFile, "utf8")
+        : url,
     };
   }
 
@@ -146,7 +158,8 @@ async function fetchThumbnail(
       const mimeType = mediaTypeFor(res.headers.get("content-type"));
       fs.writeFileSync(cached, bytes);
       fs.writeFileSync(metaFile, mimeType);
-      return { bytes, mimeType };
+      fs.writeFileSync(urlFile, candidate);
+      return { bytes, mimeType, sourceUrl: candidate };
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     }
@@ -181,7 +194,7 @@ export async function collectReferenceThumbnails(
     for (const w of winners) {
       if (w.thumbnailUrl) {
         try {
-          const { bytes, mimeType } = await fetchThumbnail(
+          const { bytes, mimeType, sourceUrl } = await fetchThumbnail(
             channelId,
             w.videoId,
             w.thumbnailUrl
@@ -194,6 +207,7 @@ export async function collectReferenceThumbnails(
             sourceLabel: w.sourceLabel,
             bytes,
             mimeType,
+            sourceUrl,
           });
         } catch (err) {
           log.warn("thumbnails", "Reference thumbnail download failed", {

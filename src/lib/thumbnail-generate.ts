@@ -102,11 +102,13 @@ export async function runGeneration(
       bytes: r.bytes,
       mimeType: r.mimeType,
       label: `own:${r.videoId} ${r.multiplier.toFixed(1)}x`,
+      sourceUrl: r.sourceUrl,
     })),
     ...refs.competitor.map((r) => ({
       bytes: r.bytes,
       mimeType: r.mimeType,
       label: `competitor:${r.videoId} ${r.multiplier.toFixed(1)}x`,
+      sourceUrl: r.sourceUrl,
     })),
   ];
 
@@ -252,6 +254,19 @@ export async function runGeneration(
 
   const costCents = measuredRunCostCents(provider, providerRow.model ?? "", usages);
   if (costCents !== null) setThumbnailRunCost(runId, costCents);
+
+  // kie.ai reports credits rather than money and publishes no rate for
+  // every model, so when we can't turn them into a cost we at least put
+  // the number somewhere the user can find it.
+  const credits = usages.reduce((sum, u) => sum + (u?.credits ?? 0), 0);
+  if (credits > 0 && costCents === null) {
+    log.info("thumbnails", "Run billed in provider credits", {
+      runId,
+      provider,
+      model: providerRow.model,
+      credits,
+    });
+  }
 
   return {
     runId,

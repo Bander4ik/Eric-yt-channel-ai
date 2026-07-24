@@ -427,11 +427,16 @@ export function ThumbnailsTab() {
 
   /* ---------------------------------------------------------------- */
 
-  const estimateCents = useMemo(() => {
+  // null means "we have no verified rate for this model", which the UI
+  // shows as "cost unknown" rather than inventing a number for a button
+  // that spends money.
+  const perImageCents = useMemo(() => {
     if (!provider || !isImageProviderChoice(provider.provider)) return null;
-    const model = findModelOption(provider.provider, provider.model);
-    return model.estimateCents * variants;
-  }, [provider, variants]);
+    return findModelOption(provider.provider, provider.model).estimateCents;
+  }, [provider]);
+
+  const estimateCents =
+    perImageCents === null ? null : perImageCents * variants;
 
   const canGenerate =
     !!style?.profile && !!provider && !!title.trim() && !busy && !anyRunning;
@@ -627,17 +632,22 @@ export function ThumbnailsTab() {
                   <Sparkles className="h-4 w-4" />
                 )}
                 Generate {variants}
-                {estimateCents !== null && (
-                  <span className="opacity-80">— ~{fmtCents(estimateCents)}</span>
-                )}
+                <span className="opacity-80">
+                  {estimateCents !== null
+                    ? `— ~${fmtCents(estimateCents)}`
+                    : provider
+                      ? "— cost unknown"
+                      : ""}
+                </span>
               </Button>
 
-              {estimateCents !== null && (
-                <span className="text-xs text-muted-foreground">
-                  estimate from published rates; the recorded cost comes from
-                  the provider after the run
-                </span>
-              )}
+              <span className="text-xs text-muted-foreground">
+                {estimateCents !== null
+                  ? "estimate from published rates; the recorded cost comes from the provider after the run"
+                  : provider
+                    ? "this provider publishes no per-image price for the selected model — check your account there"
+                    : ""}
+              </span>
             </div>
 
             {genJob && (genJob.running || genJob.lastError) && (

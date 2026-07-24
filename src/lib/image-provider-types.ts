@@ -14,17 +14,19 @@
  * disagree, the recorded one is the truth and this table needs updating.
  */
 
-export type ImageProviderChoice = "gemini" | "openai" | "fal";
+export type ImageProviderChoice = "gemini" | "openai" | "fal" | "kie";
 
 export const IMAGE_PROVIDER_CHOICES: ImageProviderChoice[] = [
   "gemini",
   "openai",
   "fal",
+  "kie",
 ];
 
 export function imageProviderLabel(p: ImageProviderChoice): string {
   if (p === "gemini") return "Google Gemini";
   if (p === "openai") return "OpenAI";
+  if (p === "kie") return "kie.ai";
   return "fal.ai";
 }
 
@@ -32,14 +34,21 @@ export function imageProviderLabel(p: ImageProviderChoice): string {
 export function imageProviderKeyUrl(p: ImageProviderChoice): string {
   if (p === "gemini") return "https://aistudio.google.com/apikey";
   if (p === "openai") return "https://platform.openai.com/api-keys";
+  if (p === "kie") return "https://kie.ai/api-key";
   return "https://fal.ai/dashboard/keys";
 }
 
 export type ImageModelOption = {
   id: string;
   label: string;
-  /** Published cost per generated image, in cents. Estimate only. */
-  estimateCents: number;
+  /**
+   * Published cost per generated image, in cents. Estimate only.
+   *
+   * `null` means we have no verified rate for this model. The UI then
+   * says "cost unknown" instead of showing a number — a made-up estimate
+   * on a spend button is worse than no estimate.
+   */
+  estimateCents: number | null;
   /**
    * How many reference IMAGES this model accepts as style guidance.
    * Gemini publishes hard per-role caps; the others are looser but we
@@ -97,6 +106,29 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       maxStyleRefs: 4,
       maxCharacterRefs: 2,
       note: "Cheap draft tier.",
+    },
+  ],
+  // kie.ai resells other people's models behind one key, which is why
+  // it is the cheapest way in and also the most constrained: it takes
+  // reference images as URLs only. Our own and competitor thumbnails are
+  // public YouTube URLs so those work, but locally uploaded brand assets
+  // cannot be sent — hence maxCharacterRefs: 0.
+  kie: [
+    {
+      id: "nano-banana-pro",
+      label: "Nano Banana Pro (Gemini 3 Pro Image)",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price for this model, so no cost is recorded — check your kie dashboard.",
+    },
+    {
+      id: "google/nano-banana",
+      label: "Nano Banana (Gemini 2.5 Flash Image)",
+      estimateCents: 2,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
     },
   ],
   fal: [

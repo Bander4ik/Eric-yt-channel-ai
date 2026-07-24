@@ -53,6 +53,13 @@ export interface ReferenceImage {
   mimeType: string;
   /** For logs and the transparency panel — never sent to the provider. */
   label: string;
+  /**
+   * Public URL this reference came from, when it has one. kie.ai accepts
+   * reference images only as URLs, and our winners are public YouTube
+   * thumbnails, so they can be passed straight through. Locally uploaded
+   * brand assets have no URL and are skipped on that provider.
+   */
+  sourceUrl?: string;
 }
 
 export interface GeneratedImage {
@@ -66,6 +73,8 @@ export interface ImageUsage {
   inputTokens?: number;
   /** Set when the provider bills per image rather than per token. */
   images?: number;
+  /** kie.ai bills in its own credits and reports them per task. */
+  credits?: number;
 }
 
 export class ImageProviderError extends Error {
@@ -126,6 +135,7 @@ function generateOne(
 ): Promise<GeneratedImage> {
   if (opts.provider === "gemini") return generateGemini(opts, index);
   if (opts.provider === "openai") return generateOpenAI(opts, index);
+  if (opts.provider === "kie") return generateKie(opts, index);
   return generateFal(opts, index);
 }
 
@@ -402,6 +412,159 @@ async function generateFal(
     // fal bills per image and reports no token usage.
     usage: { images: 1 },
   };
+}
+
+// ---------------------------------------------------------------------------
+// kie.ai
+// ---------------------------------------------------------------------------
+
+const KIE_BASE = "https://api.kie.ai/api/v1/jobs";
+const KIE_POLL_INTERVAL_MS = 2000;
+const KIE_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * kie.ai resells other providers' models behind one key and one async
+ * protocol: createTask returns a taskId, then you poll recordInfo until
+ * the state settles. We poll rather than use their callback because this
+ * app runs on someone's laptop with no public URL for a webhook to reach.
+ *
+ * Reference images go in as URLs, not bytes — which our winners already
+ * are, since they're public YouTube thumbnails.
+ */
+async function generateKie(
+  opts: GenerateImagesOpts,
+  index: number
+): Promise<GeneratedImage> {
+  const { style, character } = cappedRefs(opts);
+  const imageInput = [...style, ...character]
+    .map((r) => r.sourceUrl)
+    .filter((u): u is string => !!u);
+
+  const createRes = await fetch(`${KIE_BASE}/createTask`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      input: {
+        prompt: promptForVariant(opts.prompt, index),
+        aspect_ratio: "16:9",
+        output_format: "png",
+        ...(imageInput.length ? { image_input: imageInput } : {}),
+      },
+    }),
+  });
+
+  if (!createRes.ok) {
+    throw new ImageProviderError(
+      `kie.ai task creation failed (${createRes.status}): ${truncate(
+        await createRes.text()
+      )}`,
+      "kie",
+      createRes.status
+    );
+  }
+
+  const created = (await createRes.json()) as {
+    code?: number;
+    msg?: string;
+    data?: { taskId?: string };
+  };
+  const taskId = created.data?.taskId;
+  if (!taskId) {
+    // kie answers HTTP 200 with a non-200 `code` for things like an
+    // exhausted free tier, so the body has to be checked too.
+    throw new ImageProviderError(
+      `kie.ai returned no task id (code ${created.code ?? "?"}): ${
+        created.msg ?? "no message"
+      }`,
+      "kie"
+    );
+  }
+
+  const startedAt = Date.now();
+  for (;;) {
+    if (Date.now() - startedAt > KIE_TIMEOUT_MS) {
+      throw new ImageProviderError(
+        `kie.ai task ${taskId} did not finish within ${
+          KIE_TIMEOUT_MS / 1000
+        }s`,
+        "kie"
+      );
+    }
+    await new Promise((r) => setTimeout(r, KIE_POLL_INTERVAL_MS));
+
+    const pollRes = await fetch(
+      `${KIE_BASE}/recordInfo?taskId=${encodeURIComponent(taskId)}`,
+      { headers: { Authorization: `Bearer ${opts.apiKey}` } }
+    );
+    if (!pollRes.ok) {
+      throw new ImageProviderError(
+        `kie.ai status check failed (${pollRes.status}): ${truncate(
+          await pollRes.text()
+        )}`,
+        "kie",
+        pollRes.status
+      );
+    }
+
+    const poll = (await pollRes.json()) as {
+      data?: {
+        state?: string;
+        resultJson?: string;
+        failMsg?: string;
+        failCode?: string;
+        creditsConsumed?: number;
+      };
+    };
+    const state = poll.data?.state;
+
+    if (state === "fail") {
+      throw new ImageProviderError(
+        `kie.ai task failed (${poll.data?.failCode ?? "?"}): ${
+          poll.data?.failMsg ?? "no message"
+        }`,
+        "kie"
+      );
+    }
+    if (state !== "success") continue;
+
+    // resultJson arrives as a JSON *string*, not an object.
+    let urls: string[] = [];
+    try {
+      const parsed = JSON.parse(poll.data?.resultJson ?? "{}") as {
+        resultUrls?: string[];
+      };
+      urls = parsed.resultUrls ?? [];
+    } catch {
+      throw new ImageProviderError(
+        "kie.ai returned a result we could not parse",
+        "kie"
+      );
+    }
+    if (!urls[0]) {
+      throw new ImageProviderError("kie.ai returned no image URL", "kie");
+    }
+
+    const imgRes = await fetch(urls[0]);
+    if (!imgRes.ok) {
+      throw new ImageProviderError(
+        `could not download the image kie.ai produced (${imgRes.status})`,
+        "kie",
+        imgRes.status
+      );
+    }
+    return {
+      bytes: Buffer.from(await imgRes.arrayBuffer()),
+      mimeType: "image/png",
+      usage: {
+        images: 1,
+        credits: poll.data?.creditsConsumed,
+      },
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
