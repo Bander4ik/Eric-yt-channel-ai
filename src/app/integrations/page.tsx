@@ -13,6 +13,7 @@ import { GoogleOAuthConnector } from "@/components/google-oauth-connector";
 import { ClaudeUsage } from "@/components/claude-usage";
 import { ApifyUsage } from "@/components/apify-usage";
 import { DeepgramUsage } from "@/components/deepgram-usage";
+import { ImageProviderSettings } from "@/components/image-provider-settings";
 
 type Name = "claude" | "deepgram" | "apify" | "youtube" | "google_gemini";
 
@@ -180,6 +181,20 @@ export default function IntegrationsPage() {
             })}
           </section>
         ))}
+
+        {/* Image generation. Its own section rather than an
+            IntegrationCard because it holds a LIST of keys with one
+            active, not a single key per named service. */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Image generation
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Powers the Thumbnails tab. Bring your own key — nothing is
+            generated without one.
+          </p>
+          <ImageProviderSettings />
+        </section>
 
         {/* Advanced — collapsed by default. Google OAuth is heavier
             (full Studio Analytics, private API access) and most

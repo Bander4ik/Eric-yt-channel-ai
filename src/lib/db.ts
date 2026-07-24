@@ -38,7 +38,11 @@ const PROJECT_ROOT = findProjectRoot(__dirname);
 // for tests / advanced setups). Otherwise we always use
 // `<project-root>/data` so it's the same folder no matter where the
 // user happens to launch `npm run dev` from.
-const DATA_DIR = process.env.DATA_DIR
+// Exported because the thumbnail generator writes PNGs next to the DB
+// (data/thumbnails/...) and its file-serving route needs the same root to
+// validate paths against. Everything that touches the data folder must go
+// through this one constant so DATA_DIR overrides keep working.
+export const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(PROJECT_ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "app.db");
@@ -4780,6 +4784,10 @@ export type Idea = {
   linked_video_id: string | null;
   created_at: number;
   updated_at: number;
+  /** Set when a generated thumbnail was picked for this idea. */
+  thumbnail_variant_id?: number | null;
+  /** Joined in by listIdeas — path relative to the data folder. */
+  thumbnail_path?: string | null;
 };
 
 function requireActiveChannelId(): string {
@@ -4793,11 +4801,16 @@ function requireActiveChannelId(): string {
  * within the stage, then newest-first as a tiebreaker. */
 export function listIdeas(): Idea[] {
   const activeId = requireActiveChannelId();
+  // The LEFT JOIN carries the picked thumbnail's path onto the card so
+  // the board can show the cover without an N+1 lookup per idea. Cards
+  // with no picked thumbnail simply get null.
   return db
     .prepare(
-      `SELECT * FROM ideas
-       WHERE channel_id = ?
-       ORDER BY stage, position ASC, created_at DESC`
+      `SELECT i.*, tv.final_path AS thumbnail_path
+       FROM ideas i
+       LEFT JOIN thumbnail_variants tv ON tv.id = i.thumbnail_variant_id
+       WHERE i.channel_id = ?
+       ORDER BY i.stage, i.position ASC, i.created_at DESC`
     )
     .all(activeId) as Idea[];
 }
@@ -5356,4 +5369,729 @@ export function pruneNicheHits(days = 14): number {
     .prepare(`DELETE FROM niche_hits WHERE published_at < ?`)
     .run(cutoff);
   return info.changes;
+}
+
+
+/* ================================================================== *
+ * THUMBNAIL GENERATOR
+ *
+ * Five tables plus one column on `ideas`. Everything is scoped by
+ * `channel_id` explicitly rather than implicitly through
+ * getActiveChannelId(), because the Thumbnails tab lets the user
+ * generate for a channel other than the active one without switching.
+ * ================================================================== */
+
+db.exec(`
+  -- Image-generation providers. Unlike the integrations table (one row
+  -- per provider NAME, one key per service) this is a LIST: the user can
+  -- store several entries, including two of the same provider with
+  -- different keys, and switch between them. Exactly one row has
+  -- is_active = 1 at any time -- enforced in setActiveImageProvider(),
+  -- not by a constraint, because SQLite partial unique indexes would
+  -- make the "deactivate all then activate one" transaction awkward.
+  CREATE TABLE IF NOT EXISTS image_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL,
+    label TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    model TEXT,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+
+  -- One cached style profile per channel. profile_json is the
+  -- structured output of the Claude vision pass; the sample sizes and
+  -- the source video ids live in their own columns so the transparency
+  -- panel can render "based on N of your videos" without parsing the
+  -- blob, and so a staleness check can compare them cheaply.
+  CREATE TABLE IF NOT EXISTS thumbnail_style_profiles (
+    channel_id TEXT PRIMARY KEY,
+    profile_json TEXT NOT NULL,
+    own_sample_size INTEGER NOT NULL,
+    competitor_sample_size INTEGER NOT NULL,
+    own_video_ids TEXT NOT NULL,
+    competitor_video_ids TEXT NOT NULL,
+    low_confidence INTEGER NOT NULL DEFAULT 0,
+    model TEXT NOT NULL,
+    computed_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+
+  -- One row per "Generate" click. cost_cents starts NULL and is filled
+  -- in from the provider's own usage numbers once the run finishes --
+  -- the button shows an ESTIMATE, this column holds what was actually
+  -- billed, and the two are deliberately kept apart.
+  CREATE TABLE IF NOT EXISTS thumbnail_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id TEXT NOT NULL,
+    source_kind TEXT NOT NULL,
+    source_id TEXT,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    variants INTEGER NOT NULL,
+    cost_cents INTEGER,
+    reference_ids TEXT,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_thumb_runs_channel
+    ON thumbnail_runs(channel_id, created_at DESC);
+
+  -- One row per generated image. base_path is the model output with no
+  -- text; final_path is the composited version. A failed variant keeps
+  -- its row with error set instead of vanishing, so the UI can say
+  -- which one broke and why rather than silently returning three of four.
+  CREATE TABLE IF NOT EXISTS thumbnail_variants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    idx INTEGER NOT NULL,
+    base_path TEXT,
+    final_path TEXT,
+    overlay_json TEXT,
+    error TEXT,
+    picked INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    FOREIGN KEY (run_id) REFERENCES thumbnail_runs(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_thumb_variants_run
+    ON thumbnail_variants(run_id, idx);
+
+  -- Recurring visual identity a faceless channel is recognised by: a
+  -- mascot/character, a logo, a frame, or a font file. Fed to the image
+  -- model as character references (and, for kind = font, used by the
+  -- overlay renderer instead of the bundled font).
+  CREATE TABLE IF NOT EXISTS brand_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    label TEXT,
+    file_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_brand_assets_channel
+    ON brand_assets(channel_id, kind);
+`);
+
+// Picking a generated thumbnail attaches it to the idea card it came
+// from. Idempotent migration in the same style as the rest of the file.
+try {
+  const ideaCols = (
+    db.prepare(`PRAGMA table_info(ideas)`).all() as { name: string }[]
+  ).map((c) => c.name);
+  if (!ideaCols.includes("thumbnail_variant_id")) {
+    db.exec(`ALTER TABLE ideas ADD COLUMN thumbnail_variant_id INTEGER`);
+  }
+} catch {
+  /* noop -- table may not exist yet on a brand-new DB */
+}
+
+/* ------------------------------------------------------------------ *
+ * Image providers
+ * ------------------------------------------------------------------ */
+
+export type ImageProviderRow = {
+  id: number;
+  provider: string;
+  label: string;
+  api_key: string;
+  model: string | null;
+  is_active: number;
+  created_at: number;
+  updated_at: number;
+};
+
+export function listImageProviders(): ImageProviderRow[] {
+  return db
+    .prepare(`SELECT * FROM image_providers ORDER BY created_at ASC`)
+    .all() as ImageProviderRow[];
+}
+
+export function getImageProvider(id: number): ImageProviderRow | undefined {
+  return db.prepare(`SELECT * FROM image_providers WHERE id = ?`).get(id) as
+    | ImageProviderRow
+    | undefined;
+}
+
+/**
+ * The provider a generation run will actually use. Returns undefined
+ * when nothing is configured yet -- callers turn that into a 400 with a
+ * "configure a provider in Integrations" message rather than throwing.
+ */
+export function getActiveImageProvider(): ImageProviderRow | undefined {
+  return db
+    .prepare(`SELECT * FROM image_providers WHERE is_active = 1 LIMIT 1`)
+    .get() as ImageProviderRow | undefined;
+}
+
+export function createImageProvider(input: {
+  provider: string;
+  label: string;
+  apiKey: string;
+  model?: string | null;
+}): ImageProviderRow {
+  const now = Math.floor(Date.now() / 1000);
+  const info = db
+    .prepare(
+      `INSERT INTO image_providers (provider, label, api_key, model, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 0, ?, ?)`
+    )
+    .run(
+      input.provider,
+      input.label,
+      input.apiKey,
+      input.model ?? null,
+      now,
+      now
+    );
+  const id = Number(info.lastInsertRowid);
+  // First provider ever added becomes active automatically -- otherwise a
+  // user could add a key, hit Generate, and be told no provider is active
+  // with no obvious way to fix it.
+  const activeCount = (
+    db.prepare(`SELECT COUNT(*) AS n FROM image_providers WHERE is_active = 1`).get() as {
+      n: number;
+    }
+  ).n;
+  if (activeCount === 0) setActiveImageProvider(id);
+  return getImageProvider(id)!;
+}
+
+export function updateImageProvider(
+  id: number,
+  patch: { label?: string; apiKey?: string; model?: string | null }
+): ImageProviderRow | undefined {
+  const existing = getImageProvider(id);
+  if (!existing) return undefined;
+  db.prepare(
+    `UPDATE image_providers
+     SET label = ?, api_key = ?, model = ?, updated_at = ?
+     WHERE id = ?`
+  ).run(
+    patch.label ?? existing.label,
+    patch.apiKey ?? existing.api_key,
+    patch.model === undefined ? existing.model : patch.model,
+    Math.floor(Date.now() / 1000),
+    id
+  );
+  return getImageProvider(id);
+}
+
+/**
+ * Exactly one active row. Done as a transaction so a crash between the
+ * two statements can not leave the user with zero active providers.
+ */
+export function setActiveImageProvider(id: number): void {
+  const tx = db.transaction((targetId: number) => {
+    db.prepare(`UPDATE image_providers SET is_active = 0 WHERE is_active = 1`).run();
+    db.prepare(`UPDATE image_providers SET is_active = 1 WHERE id = ?`).run(targetId);
+  });
+  tx(id);
+}
+
+export function deleteImageProvider(id: number): boolean {
+  const row = getImageProvider(id);
+  if (!row) return false;
+  db.prepare(`DELETE FROM image_providers WHERE id = ?`).run(id);
+  // Deleting the active one promotes the oldest survivor, so the app
+  // never sits in a "providers exist but none is active" state.
+  if (row.is_active) {
+    const next = db
+      .prepare(`SELECT id FROM image_providers ORDER BY created_at ASC LIMIT 1`)
+      .get() as { id: number } | undefined;
+    if (next) setActiveImageProvider(next.id);
+  }
+  return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Thumbnail winners -- deterministic SQL, no LLM involved.
+ *
+ * Same statistical guards the Packaging tab already uses: only videos
+ * mature enough to have accumulated views count (MIN_AGE_DAYS, 14), and
+ * Shorts are excluded because a vertical cover is a different design
+ * problem. Ranking is views relative to the channel median, so a
+ * channel with 2K views per video and one with 2M are treated the same.
+ * ------------------------------------------------------------------ */
+
+const THUMB_MIN_AGE_DAYS = 14;
+const THUMB_SHORT_MAX_SECONDS = 60;
+
+export type ThumbnailWinner = {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  thumbnailText: string | null;
+  views: number;
+  multiplier: number;
+  publishedAt: number | null;
+  sourceLabel: string;
+};
+
+function medianOf(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+function thumbMaturityCutoff(): number {
+  return Math.floor(Date.now() / 1000) - THUMB_MIN_AGE_DAYS * 86400;
+}
+
+/** Top-performing mature thumbnails from the channel itself. */
+export function listOwnThumbnailWinners(
+  channelId: string,
+  limit = 12
+): ThumbnailWinner[] {
+  const rows = db
+    .prepare(
+      `SELECT id, title, thumbnail_url, thumbnail_text, views, published_at
+       FROM videos
+       WHERE channel_id = ?
+         AND thumbnail_url IS NOT NULL
+         AND published_at IS NOT NULL
+         AND published_at <= ?
+         AND (duration_seconds IS NULL OR duration_seconds > ?)`
+    )
+    .all(channelId, thumbMaturityCutoff(), THUMB_SHORT_MAX_SECONDS) as Array<{
+    id: string;
+    title: string;
+    thumbnail_url: string | null;
+    thumbnail_text: string | null;
+    views: number | null;
+    published_at: number | null;
+  }>;
+
+  const median = medianOf(rows.map((r) => r.views ?? 0).filter((v) => v > 0));
+  if (median <= 0) return [];
+
+  return rows
+    .map((r) => ({
+      videoId: r.id,
+      title: r.title,
+      thumbnailUrl: r.thumbnail_url,
+      thumbnailText: r.thumbnail_text,
+      views: r.views ?? 0,
+      multiplier: (r.views ?? 0) / median,
+      publishedAt: r.published_at,
+      sourceLabel: "own",
+    }))
+    .filter((w) => w.multiplier > 1)
+    .sort((a, b) => b.multiplier - a.multiplier)
+    .slice(0, limit);
+}
+
+/**
+ * Top-performing mature thumbnails across the competitors visible to
+ * this channel. Each competitor is normalised against ITS OWN median so
+ * a 5M-subscriber channel does not drown out the rest of the list.
+ */
+export function listCompetitorThumbnailWinners(
+  channelId: string,
+  limit = 12
+): ThumbnailWinner[] {
+  const competitors = db
+    .prepare(
+      `SELECT c.id, c.title FROM competitors c
+       WHERE (
+         NOT EXISTS (SELECT 1 FROM competitor_owners co WHERE co.competitor_id = c.id)
+         OR EXISTS (
+           SELECT 1 FROM competitor_owners co
+           WHERE co.competitor_id = c.id AND co.owner_channel_id = ?
+         )
+       )`
+    )
+    .all(channelId) as Array<{ id: number; title: string | null }>;
+
+  const cutoff = thumbMaturityCutoff();
+  const out: ThumbnailWinner[] = [];
+
+  for (const comp of competitors) {
+    const vids = db
+      .prepare(
+        `SELECT video_id, title, thumbnail_url, views, published_at
+         FROM competitor_videos
+         WHERE competitor_id = ?
+           AND thumbnail_url IS NOT NULL
+           AND published_at IS NOT NULL
+           AND published_at <= ?
+           AND (duration_seconds IS NULL OR duration_seconds > ?)`
+      )
+      .all(comp.id, cutoff, THUMB_SHORT_MAX_SECONDS) as Array<{
+      video_id: string;
+      title: string;
+      thumbnail_url: string | null;
+      views: number | null;
+      published_at: number | null;
+    }>;
+
+    const median = medianOf(vids.map((v) => v.views ?? 0).filter((v) => v > 0));
+    if (median <= 0) continue;
+
+    for (const v of vids) {
+      const multiplier = (v.views ?? 0) / median;
+      if (multiplier <= 1) continue;
+      out.push({
+        videoId: v.video_id,
+        title: v.title,
+        thumbnailUrl: v.thumbnail_url,
+        thumbnailText: null,
+        views: v.views ?? 0,
+        multiplier,
+        publishedAt: v.published_at,
+        sourceLabel: comp.title ?? `competitor ${comp.id}`,
+      });
+    }
+  }
+
+  return out.sort((a, b) => b.multiplier - a.multiplier).slice(0, limit);
+}
+
+/** How many competitors currently feed this channel's profile. */
+export function countVisibleCompetitors(channelId: string): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM competitors c
+         WHERE (
+           NOT EXISTS (SELECT 1 FROM competitor_owners co WHERE co.competitor_id = c.id)
+           OR EXISTS (
+             SELECT 1 FROM competitor_owners co
+             WHERE co.competitor_id = c.id AND co.owner_channel_id = ?
+           )
+         )`
+      )
+      .get(channelId) as { n: number }
+  ).n;
+}
+
+/* ------------------------------------------------------------------ *
+ * Style profile cache
+ * ------------------------------------------------------------------ */
+
+export type ThumbnailStyleProfileRow = {
+  channel_id: string;
+  profile_json: string;
+  own_sample_size: number;
+  competitor_sample_size: number;
+  own_video_ids: string;
+  competitor_video_ids: string;
+  low_confidence: number;
+  model: string;
+  computed_at: number;
+};
+
+export function getThumbnailStyleProfile(
+  channelId: string
+): ThumbnailStyleProfileRow | undefined {
+  return db
+    .prepare(`SELECT * FROM thumbnail_style_profiles WHERE channel_id = ?`)
+    .get(channelId) as ThumbnailStyleProfileRow | undefined;
+}
+
+export function saveThumbnailStyleProfile(input: {
+  channelId: string;
+  profileJson: string;
+  ownVideoIds: string[];
+  competitorVideoIds: string[];
+  lowConfidence: boolean;
+  model: string;
+}): void {
+  db.prepare(
+    `INSERT INTO thumbnail_style_profiles
+       (channel_id, profile_json, own_sample_size, competitor_sample_size,
+        own_video_ids, competitor_video_ids, low_confidence, model, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(channel_id) DO UPDATE SET
+       profile_json = excluded.profile_json,
+       own_sample_size = excluded.own_sample_size,
+       competitor_sample_size = excluded.competitor_sample_size,
+       own_video_ids = excluded.own_video_ids,
+       competitor_video_ids = excluded.competitor_video_ids,
+       low_confidence = excluded.low_confidence,
+       model = excluded.model,
+       computed_at = excluded.computed_at`
+  ).run(
+    input.channelId,
+    input.profileJson,
+    input.ownVideoIds.length,
+    input.competitorVideoIds.length,
+    JSON.stringify(input.ownVideoIds),
+    JSON.stringify(input.competitorVideoIds),
+    input.lowConfidence ? 1 : 0,
+    input.model,
+    Math.floor(Date.now() / 1000)
+  );
+}
+
+export function deleteThumbnailStyleProfile(channelId: string): void {
+  db.prepare(`DELETE FROM thumbnail_style_profiles WHERE channel_id = ?`).run(
+    channelId
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Runs and variants
+ * ------------------------------------------------------------------ */
+
+export type ThumbnailRunRow = {
+  id: number;
+  channel_id: string;
+  source_kind: string;
+  source_id: string | null;
+  title: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  variants: number;
+  cost_cents: number | null;
+  reference_ids: string | null;
+  created_at: number;
+};
+
+export type ThumbnailVariantRow = {
+  id: number;
+  run_id: number;
+  idx: number;
+  base_path: string | null;
+  final_path: string | null;
+  overlay_json: string | null;
+  error: string | null;
+  picked: number;
+  created_at: number;
+};
+
+export function createThumbnailRun(input: {
+  channelId: string;
+  sourceKind: string;
+  sourceId?: string | null;
+  title: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  variants: number;
+  referenceIds: string[];
+}): number {
+  const info = db
+    .prepare(
+      `INSERT INTO thumbnail_runs
+         (channel_id, source_kind, source_id, title, prompt, provider, model,
+          variants, reference_ids, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.channelId,
+      input.sourceKind,
+      input.sourceId ?? null,
+      input.title,
+      input.prompt,
+      input.provider,
+      input.model,
+      input.variants,
+      JSON.stringify(input.referenceIds),
+      Math.floor(Date.now() / 1000)
+    );
+  return Number(info.lastInsertRowid);
+}
+
+/** Written from the provider usage numbers after a run, not from an estimate. */
+export function setThumbnailRunCost(runId: number, costCents: number): void {
+  db.prepare(`UPDATE thumbnail_runs SET cost_cents = ? WHERE id = ?`).run(
+    Math.round(costCents),
+    runId
+  );
+}
+
+export function getThumbnailRun(id: number): ThumbnailRunRow | undefined {
+  return db.prepare(`SELECT * FROM thumbnail_runs WHERE id = ?`).get(id) as
+    | ThumbnailRunRow
+    | undefined;
+}
+
+export function listThumbnailRuns(
+  channelId: string,
+  limit = 20
+): ThumbnailRunRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM thumbnail_runs
+       WHERE channel_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`
+    )
+    .all(channelId, limit) as ThumbnailRunRow[];
+}
+
+export function createThumbnailVariant(input: {
+  runId: number;
+  idx: number;
+  basePath?: string | null;
+  finalPath?: string | null;
+  overlayJson?: string | null;
+  error?: string | null;
+}): number {
+  const info = db
+    .prepare(
+      `INSERT INTO thumbnail_variants
+         (run_id, idx, base_path, final_path, overlay_json, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.runId,
+      input.idx,
+      input.basePath ?? null,
+      input.finalPath ?? null,
+      input.overlayJson ?? null,
+      input.error ?? null,
+      Math.floor(Date.now() / 1000)
+    );
+  return Number(info.lastInsertRowid);
+}
+
+export function getThumbnailVariant(
+  id: number
+): ThumbnailVariantRow | undefined {
+  return db.prepare(`SELECT * FROM thumbnail_variants WHERE id = ?`).get(id) as
+    | ThumbnailVariantRow
+    | undefined;
+}
+
+export function listThumbnailVariants(runId: number): ThumbnailVariantRow[] {
+  return db
+    .prepare(`SELECT * FROM thumbnail_variants WHERE run_id = ? ORDER BY idx ASC`)
+    .all(runId) as ThumbnailVariantRow[];
+}
+
+export function updateThumbnailVariantOverlay(
+  id: number,
+  finalPath: string,
+  overlayJson: string
+): void {
+  db.prepare(
+    `UPDATE thumbnail_variants SET final_path = ?, overlay_json = ? WHERE id = ?`
+  ).run(finalPath, overlayJson, id);
+}
+
+/**
+ * Mark one variant as the chosen cover. Scoped to the run, so picking in
+ * a new run does not silently unpick an older one the user may have
+ * already sent to their editor.
+ */
+export function pickThumbnailVariant(id: number): ThumbnailVariantRow | undefined {
+  const variant = getThumbnailVariant(id);
+  if (!variant) return undefined;
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE thumbnail_variants SET picked = 0 WHERE run_id = ?`).run(
+      variant.run_id
+    );
+    db.prepare(`UPDATE thumbnail_variants SET picked = 1 WHERE id = ?`).run(id);
+    const run = getThumbnailRun(variant.run_id);
+    if (run && run.source_kind === "idea" && run.source_id) {
+      db.prepare(`UPDATE ideas SET thumbnail_variant_id = ? WHERE id = ?`).run(
+        id,
+        Number(run.source_id)
+      );
+    }
+  });
+  tx();
+  return getThumbnailVariant(id);
+}
+
+export function deleteThumbnailRun(id: number): boolean {
+  const info = db.prepare(`DELETE FROM thumbnail_runs WHERE id = ?`).run(id);
+  return info.changes > 0;
+}
+
+/**
+ * Spend on generated thumbnails. Only rows with a recorded cost count --
+ * runs whose provider gave us no usage numbers are reported separately
+ * so the UI can say "3 runs with no cost data" instead of quietly
+ * understating the total.
+ */
+export function thumbnailSpendStats(channelId?: string): {
+  totalCents: number;
+  runs: number;
+  runsWithoutCost: number;
+  images: number;
+} {
+  const where = channelId ? `WHERE channel_id = ?` : ``;
+  const params = channelId ? [channelId] : [];
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(cost_cents), 0) AS totalCents,
+              COUNT(*) AS runs,
+              SUM(CASE WHEN cost_cents IS NULL THEN 1 ELSE 0 END) AS runsWithoutCost,
+              COALESCE(SUM(variants), 0) AS images
+       FROM thumbnail_runs ` + where
+    )
+    .get(...params) as {
+    totalCents: number;
+    runs: number;
+    runsWithoutCost: number | null;
+    images: number;
+  };
+  return {
+    totalCents: row.totalCents,
+    runs: row.runs,
+    runsWithoutCost: row.runsWithoutCost ?? 0,
+    images: row.images,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Brand assets
+ * ------------------------------------------------------------------ */
+
+export type BrandAssetRow = {
+  id: number;
+  channel_id: string;
+  kind: string;
+  label: string | null;
+  file_path: string;
+  created_at: number;
+};
+
+export function listBrandAssets(channelId: string): BrandAssetRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM brand_assets WHERE channel_id = ? ORDER BY created_at ASC`
+    )
+    .all(channelId) as BrandAssetRow[];
+}
+
+export function createBrandAsset(input: {
+  channelId: string;
+  kind: string;
+  label?: string | null;
+  filePath: string;
+}): BrandAssetRow {
+  const info = db
+    .prepare(
+      `INSERT INTO brand_assets (channel_id, kind, label, file_path, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.channelId,
+      input.kind,
+      input.label ?? null,
+      input.filePath,
+      Math.floor(Date.now() / 1000)
+    );
+  return db
+    .prepare(`SELECT * FROM brand_assets WHERE id = ?`)
+    .get(Number(info.lastInsertRowid)) as BrandAssetRow;
+}
+
+export function getBrandAsset(id: number): BrandAssetRow | undefined {
+  return db.prepare(`SELECT * FROM brand_assets WHERE id = ?`).get(id) as
+    | BrandAssetRow
+    | undefined;
+}
+
+export function deleteBrandAsset(id: number): boolean {
+  const info = db.prepare(`DELETE FROM brand_assets WHERE id = ?`).run(id);
+  return info.changes > 0;
 }

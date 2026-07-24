@@ -18,9 +18,14 @@ import {
   listCompetitors,
   listHooksLibrary,
   listHooksWithVideos,
+  getThumbnailStyleProfile,
+  listCompetitorThumbnailWinners,
   listIdeas,
+  listOwnThumbnailWinners,
   listReplies,
   listTaggedComments,
+  listThumbnailRuns,
+  listThumbnailVariants,
   listTopLevelComments,
   listVideos,
   searchComments,
@@ -542,6 +547,26 @@ const STRATEGY_TOOLS: Tool[] = [
       required: ["tag"],
     },
   },
+  // Thumbnail generation is READ-ONLY to the chat on purpose. The model
+  // can see the style profile and what has been generated, so "chat sees
+  // everything the user sees" still holds — but it cannot start a run,
+  // because that spends the user's image-provider credit and paid work
+  // in this app happens only on an explicit user action.
+  {
+    name: "get_thumbnail_style_profile",
+    description:
+      "The channel's thumbnail style profile from the Ideation → Thumbnails tab: the visual grammar (composition, palette, subject, headline treatment, mood) shared by thumbnails that beat this channel's median views, each trait with its sample size and the video ids supporting it, plus caveats for traits with thin evidence. Use for any question about what the channel's thumbnails should look like. Returns null when the analysis has not been run yet — say so rather than guessing.",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "list_thumbnail_runs",
+    description:
+      "Recent thumbnail generation runs for this channel: title, prompt used, provider and model, number of variants, recorded cost (null when the provider reported no usage), and which variant was picked. You cannot start a generation — if the user wants new thumbnails, point them at Ideation → Thumbnails.",
+    input_schema: {
+      type: "object",
+      properties: { limit: { type: "number", default: 10 } },
+    },
+  },
 ];
 
 export function getToolsFor(groups: ToolGroup[]): Tool[] {
@@ -589,6 +614,8 @@ const CHANNEL_SCOPED_TOOLS = new Set<string>([
   "add_idea",
   "get_packaging_analysis",
   "list_tagged_comments",
+  "get_thumbnail_style_profile",
+  "list_thumbnail_runs",
 ]);
 
 export async function runTool(name: string, input: ToolInput): Promise<ToolResult> {
@@ -1159,6 +1186,55 @@ export async function runTool(name: string, input: ToolInput): Promise<ToolResul
         }
         const limit = Math.min(200, Math.max(1, Number(input.limit) || 50));
         return { ok: true, data: listTaggedComments(tag, limit) };
+      }
+
+      case "get_thumbnail_style_profile": {
+        const channelId = getActiveChannelId()!;
+        const row = getThumbnailStyleProfile(channelId);
+        if (!row) {
+          return {
+            ok: true,
+            data: {
+              profile: null,
+              note: "No thumbnail style analysis has been run for this channel yet. The user can run it on Ideation → Thumbnails. Do not invent a style.",
+              availableWinners: {
+                own: listOwnThumbnailWinners(channelId, 12).length,
+                competitor: listCompetitorThumbnailWinners(channelId, 12).length,
+              },
+            },
+          };
+        }
+        return {
+          ok: true,
+          data: {
+            profile: JSON.parse(row.profile_json),
+            ownSampleSize: row.own_sample_size,
+            competitorSampleSize: row.competitor_sample_size,
+            lowConfidence: row.low_confidence === 1,
+            ownVideoIds: JSON.parse(row.own_video_ids),
+            competitorVideoIds: JSON.parse(row.competitor_video_ids),
+            computedAt: row.computed_at,
+          },
+        };
+      }
+
+      case "list_thumbnail_runs": {
+        const limit = Math.min(50, Math.max(1, Number(input.limit) || 10));
+        const runs = listThumbnailRuns(getActiveChannelId()!, limit);
+        return {
+          ok: true,
+          data: runs.map((run) => ({
+            id: run.id,
+            title: run.title,
+            prompt: run.prompt,
+            provider: run.provider,
+            model: run.model,
+            variants: run.variants,
+            costCents: run.cost_cents,
+            createdAt: run.created_at,
+            picked: listThumbnailVariants(run.id).some((v) => v.picked === 1),
+          })),
+        };
       }
 
       default:

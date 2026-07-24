@@ -1,0 +1,210 @@
+import { NextResponse } from "next/server";
+import {
+  countVisibleCompetitors,
+  getActiveChannelId,
+  getIntegration,
+  getThumbnailStyleProfile,
+  listCompetitorThumbnailWinners,
+  listOwnThumbnailWinners,
+  saveThumbnailStyleProfile,
+} from "@/lib/db";
+import {
+  analyseThumbnailStyle,
+  collectReferenceThumbnails,
+  MAX_COMPETITOR_REFS,
+  MAX_OWN_REFS,
+  MIN_WINNERS,
+  PROFILE_MAX_AGE_MS,
+  type ThumbnailStyleProfile,
+} from "@/lib/thumbnail-style";
+import {
+  finishJob,
+  isJobRunning,
+  jobKey,
+  progressJob,
+  readJob,
+  startJob,
+} from "@/lib/settings-job";
+import { log } from "@/lib/logger";
+
+/**
+ * The channel's thumbnail style profile.
+ *
+ * GET is free and never calls a model: it returns the cached profile (if
+ * any), the winner counts the next analysis would use, and the job
+ * status. That's what lets the tab render a truthful empty state —
+ * "24 winners found, analysis not run yet" — without spending anything.
+ *
+ * POST starts the analysis as a survivable job. Paid work happens only
+ * here, on an explicit user action.
+ */
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+const JOB_BASE = "thumbnail.style.job";
+
+function resolveChannelId(req: Request): string | null {
+  const url = new URL(req.url);
+  return url.searchParams.get("channelId") || getActiveChannelId();
+}
+
+export async function GET(req: Request) {
+  const channelId = resolveChannelId(req);
+  if (!channelId) {
+    return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
+  }
+
+  const row = getThumbnailStyleProfile(channelId);
+  const own = listOwnThumbnailWinners(channelId, MAX_OWN_REFS);
+  const competitor = listCompetitorThumbnailWinners(channelId, MAX_COMPETITOR_REFS);
+
+  let profile: ThumbnailStyleProfile | null = null;
+  if (row) {
+    try {
+      profile = JSON.parse(row.profile_json) as ThumbnailStyleProfile;
+    } catch {
+      profile = null;
+    }
+  }
+
+  const ageMs = row ? Date.now() - row.computed_at * 1000 : null;
+
+  return NextResponse.json({
+    channelId,
+    profile,
+    computedAt: row?.computed_at ?? null,
+    lowConfidence: row ? row.low_confidence === 1 : null,
+    ownSampleSize: row?.own_sample_size ?? null,
+    competitorSampleSize: row?.competitor_sample_size ?? null,
+    // Live counts of what a fresh analysis would look at right now.
+    available: {
+      own: own.length,
+      competitor: competitor.length,
+      competitorsTracked: countVisibleCompetitors(channelId),
+      minWinners: MIN_WINNERS,
+    },
+    winners: {
+      own: own.map(publicWinner),
+      competitor: competitor.map(publicWinner),
+    },
+    stale: ageMs !== null && ageMs > PROFILE_MAX_AGE_MS,
+    job: readJob(jobKey(JOB_BASE, channelId)),
+  });
+}
+
+function publicWinner(w: {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  multiplier: number;
+  views: number;
+  sourceLabel: string;
+}) {
+  return {
+    videoId: w.videoId,
+    title: w.title,
+    thumbnailUrl: w.thumbnailUrl,
+    multiplier: Number(w.multiplier.toFixed(2)),
+    views: w.views,
+    sourceLabel: w.sourceLabel,
+  };
+}
+
+export async function POST(req: Request) {
+  const channelId = resolveChannelId(req);
+  if (!channelId) {
+    return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
+  }
+
+  const apiKey = getIntegration("claude")?.api_key;
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "Claude API key is not configured. Add it in Integrations." },
+      { status: 400 }
+    );
+  }
+
+  const key = jobKey(JOB_BASE, channelId);
+  if (isJobRunning(key)) {
+    return NextResponse.json(
+      { error: "A style analysis is already running for this channel." },
+      { status: 409 }
+    );
+  }
+
+  const ownCount = listOwnThumbnailWinners(channelId, MAX_OWN_REFS).length;
+  const compCount = listCompetitorThumbnailWinners(
+    channelId,
+    MAX_COMPETITOR_REFS
+  ).length;
+  if (ownCount + compCount === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "No thumbnails to analyse yet. Sync this channel's videos, and add competitors on the Competitors tab.",
+      },
+      { status: 400 }
+    );
+  }
+
+  startJob(key, ownCount + compCount, "collecting reference thumbnails");
+  log.info("thumbnails", "Style analysis started", {
+    channelId,
+    own: ownCount,
+    competitor: compCount,
+  });
+
+  // Fire-and-forget: the analysis finishes on the server whether or not
+  // the tab stays open.
+  void (async () => {
+    try {
+      const refs = await collectReferenceThumbnails(channelId, (done, total) => {
+        progressJob(key, { done, total, stage: "collecting reference thumbnails" });
+      });
+
+      progressJob(key, {
+        stage: `analysing ${refs.own.length + refs.competitor.length} thumbnails`,
+      });
+
+      const { profile, model } = await analyseThumbnailStyle({
+        apiKey,
+        own: refs.own,
+        competitor: refs.competitor,
+      });
+
+      // Confidence is decided by OUR winner count, not by the model's
+      // self-assessment — the whole point of the n>=5 bar is that the
+      // thing being measured doesn't get to grade itself.
+      const lowConfidence = refs.own.length < MIN_WINNERS;
+
+      saveThumbnailStyleProfile({
+        channelId,
+        profileJson: JSON.stringify(profile),
+        ownVideoIds: refs.own.map((r) => r.videoId),
+        competitorVideoIds: refs.competitor.map((r) => r.videoId),
+        lowConfidence,
+        model,
+      });
+
+      finishJob(key, {
+        done: refs.own.length + refs.competitor.length,
+        stage: "done",
+      });
+      log.info("thumbnails", "Style analysis finished", {
+        channelId,
+        own: refs.own.length,
+        competitor: refs.competitor.length,
+        lowConfidence,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("thumbnails", `Style analysis failed: ${message}`, err, {
+        channelId,
+      });
+      finishJob(key, { lastError: message, stage: "failed" });
+    }
+  })();
+
+  return NextResponse.json({ ok: true, started: true, total: ownCount + compCount });
+}

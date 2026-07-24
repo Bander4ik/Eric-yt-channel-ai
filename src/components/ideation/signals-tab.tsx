@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   Flame,
+  Image as ImageIcon,
   Loader2,
   Plug,
   Radar,
@@ -1216,9 +1217,78 @@ function VariantCard({
       {v.rationale && (
         <p className="text-xs text-muted-foreground">{v.rationale}</p>
       )}
-      <div className="mt-auto pt-1">
+      <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
         <AddToIdeasButton draft={draft} />
+        <GenerateThumbnailButton title={v.title} overlayText={v.thumbText} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Sends this title straight into the thumbnail generator, closing the
+ * signal → title → cover loop without a copy-paste. The run itself is a
+ * server job, so the button's job is done the moment it starts: the
+ * results land on Ideation → Thumbnails whether or not this tab stays
+ * open.
+ */
+function GenerateThumbnailButton({
+  title,
+  overlayText,
+}: {
+  title: string;
+  overlayText?: string | null;
+}) {
+  const [state, setState] = useState<"idle" | "starting" | "started" | "error">(
+    "idle"
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const start = useCallback(async () => {
+    setState("starting");
+    setError(null);
+    const r = await fetch("/api/thumbnails/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        overlayText: overlayText || undefined,
+        sourceKind: "signal",
+      }),
+    });
+    const d = (await r.json().catch(() => ({}))) as { error?: string };
+    if (!r.ok) {
+      setState("error");
+      setError(d.error ?? `Failed (HTTP ${r.status})`);
+      return;
+    }
+    setState("started");
+  }, [title, overlayText]);
+
+  if (state === "started") {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Generating — see the Thumbnails tab
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={start}
+        disabled={state === "starting"}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+      >
+        {state === "starting" ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <ImageIcon className="h-3 w-3" />
+        )}
+        Thumbnail
+      </button>
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>
   );
 }

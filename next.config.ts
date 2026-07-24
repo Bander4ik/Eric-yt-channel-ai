@@ -9,7 +9,15 @@ const nextConfig: NextConfig = {
   //   - youtubei.js: large, heavy CJS/ESM interop, and our two callers use
   //     dynamic `await import()`. Leaving it external avoids any chance of
   //     Next inlining the wrong build and crashing at runtime.
-  serverExternalPackages: ["better-sqlite3", "youtube-dl-exec", "youtubei.js"],
+  //   - @napi-rs/canvas: native .node binding for the thumbnail text
+  //     compositor. Turbopack refuses it outright ("non-ecmascript
+  //     placeable asset") when it tries to pull it into an ESM chunk.
+  serverExternalPackages: [
+    "better-sqlite3",
+    "youtube-dl-exec",
+    "youtubei.js",
+    "@napi-rs/canvas",
+  ],
 };
 
 export default nextConfig;

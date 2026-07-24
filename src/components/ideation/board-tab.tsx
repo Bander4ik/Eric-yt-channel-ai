@@ -55,6 +55,10 @@ type Idea = {
   linked_video_id: string | null;
   created_at: number;
   updated_at: number;
+  /** Set when a generated thumbnail was picked for this idea. */
+  thumbnail_variant_id?: number | null;
+  /** Path of that thumbnail, relative to the data folder. */
+  thumbnail_path?: string | null;
 };
 
 const PIPELINE: { stage: IdeaStage; label: string }[] = [
@@ -714,6 +718,19 @@ function IdeaCard({
       )}
     >
       <CardContent className="space-y-1.5 p-2.5">
+        {idea.thumbnail_path && (
+          // The cover picked on the Thumbnails tab. Plain img: served
+          // from the local data folder, no optimiser configured.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`/api/thumbnails/file/${idea.thumbnail_path
+              .split("/")
+              .map(encodeURIComponent)
+              .join("/")}`}
+            alt=""
+            className="mb-1 w-full rounded"
+          />
+        )}
         <div className="flex items-start justify-between gap-1.5">
           <button
             type="button"

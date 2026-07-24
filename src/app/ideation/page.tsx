@@ -1,12 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Lightbulb, LayoutDashboard, Video, PackageOpen, Radar } from "lucide-react";
+import {
+  Lightbulb,
+  LayoutDashboard,
+  Video,
+  PackageOpen,
+  Radar,
+  Image as ImageIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VideosTab } from "@/components/ideation/videos-tab";
 import { BoardTab } from "@/components/ideation/board-tab";
 import { PackagingTab } from "@/components/ideation/packaging-tab";
 import { SignalsTab } from "@/components/ideation/signals-tab";
+import { ThumbnailsTab } from "@/components/ideation/thumbnails-tab";
 
 /**
  * Ideation hub — the single sidebar destination that holds the whole
@@ -17,7 +25,7 @@ import { SignalsTab } from "@/components/ideation/signals-tab";
  * its own data fetching and UI.
  */
 
-type Tab = "board" | "videos" | "packaging" | "signals";
+type Tab = "board" | "videos" | "packaging" | "signals" | "thumbnails";
 
 export default function IdeationPage() {
   // TODO: default to "board" once the Board tab is real (it's the
@@ -54,12 +62,20 @@ export default function IdeationPage() {
           <Radar className="h-3.5 w-3.5" />
           Signals
         </TabButton>
+        <TabButton
+          active={tab === "thumbnails"}
+          onClick={() => setTab("thumbnails")}
+        >
+          <ImageIcon className="h-3.5 w-3.5" />
+          Thumbnails
+        </TabButton>
       </div>
 
       {tab === "board" && <BoardTab />}
       {tab === "videos" && <VideosTab />}
       {tab === "packaging" && <PackagingTab />}
       {tab === "signals" && <SignalsTab />}
+      {tab === "thumbnails" && <ThumbnailsTab />}
     </div>
   );
 }
