@@ -352,7 +352,10 @@ export async function analyseThumbnailStyle(input: {
   const raw = await runTurn({
     analyser: input.analyser,
     content,
-    maxTokens: 2000,
+    // Generous: the profile JSON runs long, and truncation lands as a
+    // JSON parse error rather than a clean failure. Sonnet 5 is more
+    // verbose than the model this budget was first tuned against.
+    maxTokens: 8000,
     label: "thumbnail style analysis",
   });
 
@@ -572,7 +575,7 @@ export async function buildGenerationPlan(input: {
 
   const raw = await runTurn({
     analyser: input.analyser,
-    maxTokens: 1200,
+    maxTokens: 4000,
     label: "thumbnail prompt build",
     content: `VIDEO TITLE: ${input.title}
 

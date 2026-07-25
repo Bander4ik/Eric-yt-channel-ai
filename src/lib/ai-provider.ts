@@ -100,6 +100,14 @@ export interface StreamTurnOpts {
    *     web search can switch the chat header to Claude.
    */
   webSearch?: boolean;
+  /**
+   * Claude thinking mode. Defaults to "disabled" — see the comment on the
+   * request in runClaudeTurn for why (Sonnet 5 thinks by default and shares
+   * the max_tokens budget, starving small-budget callers of visible output).
+   * Pass "adaptive" for turns with a generous budget that benefit from it.
+   * No-op on Gemini turns.
+   */
+  thinking?: "adaptive" | "disabled";
   /** Called for every text delta — same shape both providers, raw text only. */
   onText: (delta: string) => void;
 }
@@ -147,6 +155,19 @@ async function runClaudeTurn(
     system: opts.system,
     messages: opts.messages,
     tools: composedTools.length ? composedTools : undefined,
+    // Thinking is OFF unless a caller asks for it. On Sonnet 5 (unlike the
+    // Sonnet 4.6 this code was written against) omitting `thinking` enables
+    // adaptive thinking, and thinking shares the `max_tokens` budget while
+    // its blocks carry no visible text by default. Callers here run on tight
+    // budgets (thumbnail OCR 300, packaging formula 800, style analysis
+    // 2000), so the model could spend the whole budget thinking and return
+    // zero text blocks — which surfaced as "claude-sonnet-5 returned no text
+    // for the thumbnail style analysis. It may have refused the request."
+    // Nothing was refused; the answer was never left room to exist.
+    thinking:
+      opts.thinking === "adaptive"
+        ? { type: "adaptive" }
+        : { type: "disabled" },
   });
 
   stream.on("text", (text) => opts.onText(text));
