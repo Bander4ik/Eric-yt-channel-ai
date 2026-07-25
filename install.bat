@@ -49,6 +49,27 @@ if %NODE_MAJOR% LSS 20 (
   exit /b 1
 )
 
+echo %CD% | findstr /I "OneDrive" >nul
+if not errorlevel 1 (
+  echo.
+  echo ****************************************************************
+  echo  WARNING: this project sits inside your OneDrive folder.
+  echo ****************************************************************
+  echo.
+  echo OneDrive keeps syncing these files while the installer is still
+  echo writing them. That causes "EPERM" errors, half-installed folders,
+  echo and strange breakages later on even when the install appears fine.
+  echo.
+  echo Strongly recommended: move this whole project folder somewhere
+  echo outside OneDrive - for example C:\Projects - and run install.bat
+  echo again from the new location.
+  echo.
+  echo Press a key to continue anyway, or close this window to move it first.
+  echo %CD% >> "%LOGFILE%"
+  echo WARNING: project is inside OneDrive. >> "%LOGFILE%"
+  pause
+)
+
 echo Installing dependencies. This takes 2-5 minutes.
 echo.
 echo IMPORTANT: the screen will stay quiet the whole time - that is normal.

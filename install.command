@@ -37,6 +37,24 @@ if [ "$NODE_MAJOR" -lt 20 ]; then
   exit 1
 fi
 
+case "$DIR" in
+  *OneDrive*|*"Google Drive"*|*Dropbox*|*"com~apple~CloudDocs"*)
+    echo
+    echo "****************************************************************"
+    echo " WARNING: this project sits inside a synced cloud folder."
+    echo "****************************************************************"
+    echo
+    echo "The sync client keeps touching these files while the installer is"
+    echo "still writing them, which causes permission errors and half-installed"
+    echo "folders. Move the project somewhere local - for example your home"
+    echo "folder - and run install.command again from there."
+    echo
+    echo "WARNING: project is inside a synced cloud folder: $DIR" >> "$LOGFILE"
+    read -n 1 -s -r -p "Press any key to continue anyway, or close this window..."
+    echo
+    ;;
+esac
+
 echo "Installing dependencies. This takes 2-5 minutes."
 echo
 echo "IMPORTANT: the screen will stay quiet the whole time - that is normal."

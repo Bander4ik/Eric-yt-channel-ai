@@ -80,14 +80,16 @@ If the developer is going to push fixes and you want one-click updates without r
    ```
    https://github.com/YT-Wizards/YouTube-Channel-AI-VIP
    ```
-4. **Local path** → pick a folder (default `Documents/GitHub/YouTube-Channel-AI-VIP` is fine) → **Clone**.
+4. **Local path** → **change this away from the default.** Pick something like `C:\Projects` (Windows) or your home folder (Mac) → **Clone**.
+
+   > ⚠️ **Do not clone into OneDrive.** GitHub Desktop suggests `Documents/GitHub/...`, and on most Windows machines `Documents` is synced to OneDrive. OneDrive keeps touching the files while the installer is writing them, which makes the install fail with `EPERM` errors and breaks the app in confusing ways later. The same goes for iCloud Drive, Dropbox and Google Drive.
 5. Done. To update later: open GitHub Desktop → click **Fetch origin** → if there are new changes, click **Pull origin**.
 
 ### 2.x — Move the folder somewhere safe
 
 This applies to **both options**.
 
-**Don't leave the project in `Downloads`** — browsers and OS cleanup utilities auto-delete old Downloads, which would wipe the app *and your local data* (API keys, transcripts, chat history) along with it. If you used Option B, the GitHub Desktop default location (`Documents/GitHub/...`) is already fine — skip this step.
+**Don't leave the project in `Downloads`** — browsers and OS cleanup utilities auto-delete old Downloads, which would wipe the app *and your local data* (API keys, transcripts, chat history) along with it. **Don't leave it in a synced cloud folder either** — OneDrive, iCloud Drive, Dropbox or Google Drive. Syncing fights with the installer and corrupts `node_modules`. On Windows, `Documents` is very often OneDrive without you ever choosing that, so check the real path: if it contains `OneDrive`, move the folder to something like `C:\Projects` and run the installer again from there.
 
 Move (drag-and-drop is fine) the folder to:
 
