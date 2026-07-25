@@ -78,10 +78,13 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
     {
       id: "gemini-3.1-flash-image",
       label: "Gemini 3.1 Flash Image",
-      estimateCents: 6.7,
+      // Published rate is 6.7c; a real 2-image run on 2026-07-24 recorded
+      // 8.5c each. Estimate follows the measurement. Still roughly half
+      // the Pro model's cost.
+      estimateCents: 9,
       maxStyleRefs: 4,
       maxCharacterRefs: 4,
-      note: "Half the price, still strong. Good for iterating.",
+      note: "About half the price of Pro, still strong. Good for iterating and for high-volume runs.",
     },
     {
       id: "gemini-2.5-flash-image",
