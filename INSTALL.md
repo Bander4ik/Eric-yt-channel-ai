@@ -196,6 +196,10 @@ This is what lets the app pull real Analytics data (views over time, retention, 
      - `https://www.googleapis.com/auth/youtube.readonly`
    - **Save and continue**.
    - **Test users** → **Add users** → add the email of every Google account that owns a YouTube channel you'll be analyzing. **Save and continue → Back to dashboard**.
+
+   > ⚠️ **If your channel sits on a Brand Account**, don't add the brand account here — it has no login of its own, and Google will reject it with *"Ineligible accounts not added"*. Add the **personal Google account that owns the Brand Account** instead. When you connect it in the app, Google shows a channel picker and you choose the brand channel there.
+   >
+   > **Editor or Manager access is not enough.** Google's own rule: *"invited users can't access: YouTube Music, YouTube Kids app, YouTube APIs"* ([source](https://support.google.com/youtube/answer/9481328)). Anyone invited through YouTube channel permissions — any role — is blocked from the API no matter what they can see in Studio. It has to be the owner. You can check who that is in **YouTube Studio → Settings → Permissions**.
 3. **APIs & Services → Credentials → + Create Credentials → OAuth client ID**:
    - **Application type**: Web application.
    - **Name**: `youtube-channel-ai-vip`.
