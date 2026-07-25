@@ -1,4 +1,4 @@
-# Thumbnail Radar
+# YouTube Channel AI VIP
 
 A local AI-powered YouTube channel analytics platform with an **AI thumbnail generator**: YouTube Studio-style dashboard (views, watch time, subscribers, audience, traffic, revenue), retention curves, video hook analyzer, AI chat with Claude over all your imported data, automatic transcript extraction, comment & competitor analysis — and a Thumbnails tab that generates covers in the style that measurably works on your channel.
 
@@ -19,7 +19,7 @@ The **Ideation → Thumbnails** tab turns a video title into finished 16:9 cover
 Full step-by-step setup for someone who has never worked with code is in **[INSTALL.md](./INSTALL.md)**. Short version:
 
 1. Install Node.js 20+ from [nodejs.org](https://nodejs.org/)
-2. Download this repo — either as a ZIP from the green **Code** button above, or `git clone https://github.com/YT-Wizards/Thumbnail-Radar-Shkelqim.git`
+2. Download this repo — either as a ZIP from the green **Code** button above, or `git clone https://github.com/YT-Wizards/YouTube-Channel-AI-VIP.git`
 3. Run `install.bat` (Windows) or `install.command` (macOS) — installs dependencies
 4. Run `start.bat` (Windows) or `start.command` (macOS) — opens the app in your browser at `http://localhost:3000`
 5. Open **Integrations** and add your keys (minimum: Claude + Deepgram)
