@@ -1,7 +1,7 @@
 """
-Dark-theme walkthrough of the thumbnail generator, one scene per ТЗ
-point. No generation is triggered — it shows covers already in history,
-so the recording spends nothing.
+Dark-theme step-by-step walkthrough of how the generator works. Each
+step highlights the element it talks about for the whole scene. No
+generation is triggered, so the recording spends nothing.
 """
 import json, os, time
 from playwright.sync_api import sync_playwright
@@ -12,27 +12,28 @@ scenes = {s["id"]: s for s in json.load(open(os.path.join(HERE, "scenes.json"), 
 MARKS = {}
 T0 = [0.0]
 
-def hold(sid):
-    MARKS[sid] = time.time() - T0[0]
-    time.sleep(scenes[sid]["dur"])
-
-def to(page, selector, block="center"):
+def highlight(page, selector, dur):
+    """Ring an element and keep it ringed for the whole scene."""
+    ms = int(dur * 1000)
     try:
-        page.eval_on_selector(selector, f"el=>el.scrollIntoView({{block:'{block}'}})")
-        page.wait_for_timeout(350)
-    except Exception:
-        pass
-
-def flash(page, selector):
-    try:
-        page.eval_on_selector(selector, """el => {
+        page.eval_on_selector(selector, """(el, ms) => {
             el.scrollIntoView({behavior:'smooth', block:'center'});
-            const o = el.style.boxShadow;
-            el.style.boxShadow='0 0 0 4px #e0322e';
-            setTimeout(()=>{el.style.boxShadow=o;}, 2000);
-        }""")
+            const o = el.style.boxShadow, r = el.style.borderRadius;
+            el.style.transition='box-shadow .25s';
+            el.style.boxShadow='0 0 0 4px #e0322e, 0 0 22px 4px rgba(224,50,46,.5)';
+            el.style.borderRadius='6px';
+            setTimeout(()=>{el.style.boxShadow=o; el.style.borderRadius=r;}, ms);
+        }""", ms)
     except Exception:
         pass
+
+def scene(page, sid, selector=None):
+    MARKS[sid] = time.time() - T0[0]
+    d = scenes[sid]["dur"]
+    if selector:
+        highlight(page, selector, d + 0.3)
+        page.wait_for_timeout(400)
+    time.sleep(d)
 
 def main():
     with sync_playwright() as p:
@@ -43,7 +44,6 @@ def main():
             record_video_dir=HERE,
             record_video_size={"width": 1280, "height": 720},
         )
-        # force the app's own dark theme before any script runs
         ctx.add_init_script("try{localStorage.setItem('yt-channel-ai.theme','dark')}catch(e){}")
         page = ctx.new_page()
         T0[0] = time.time()
@@ -55,36 +55,39 @@ def main():
                 b.click(); break
         page.wait_for_timeout(2500)
 
-        # S1 intro
-        hold("s1")
-        # S2 point 1 — tab + channel picker
-        flash(page, "select"); hold("s2")
-        # S3 point 2 — own winners
-        to(page, "text=What this is based on", "start"); hold("s3")
-        # S4 point 3 — competitor winners
-        to(page, "text=competitor winners"); hold("s4")
-        # S5 point 4 — basis explanation + competitors hint
-        to(page, "text=your competitors"); hold("s5")
-        # S6 point 5 — provider banner (Integrations, switchable)
-        flash(page, "text=Generating with"); hold("s6")
-        # S7 point 6 — generate card / background job (NOT triggered)
-        to(page, "text=Generate"); flash(page, "input"); hold("s7")
-        # S8 point 7 — universality: channel dropdown holds channels in other langs
-        flash(page, "select"); hold("s8")
-        # S9 result — existing generated covers (no new spend)
+        scene(page, "s1")                                     # intro
+        scene(page, "s2", "select")                           # channel picker
+        scene(page, "s3", "text=your winners")               # own winners
+        scene(page, "s4", "text=competitor winners")         # competitor winners
+        scene(page, "s5", "text=Composition")                # derived style profile
+        scene(page, "s6", "text=What this is based on")      # basis panel
+        scene(page, "s7", "text=Generating with")            # provider / model
+        scene(page, "s8", "input")                            # title field + priced button
+        scene(page, "s9", "text=Generate")                   # generate button (not clicked)
+        # result — an existing cover from history, no new spend
         imgs = page.query_selector_all("img")
+        target = None
         for im in imgs:
             if "/api/thumbnails/file/" in (im.get_attribute("src") or ""):
-                im.scroll_into_view_if_needed(); break
-        page.wait_for_timeout(300); hold("s9")
-        # S10 cost — history with recorded cost
+                target = im; break
+        if target:
+            target.scroll_into_view_if_needed()
+            page.wait_for_timeout(300)
+        MARKS["s10"] = time.time() - T0[0]
+        if target:
+            box = target.bounding_box()
+            page.evaluate("""(sel)=>{const im=[...document.querySelectorAll('img')].find(i=>(i.getAttribute('src')||'').includes('/api/thumbnails/file/'));
+                if(im){im.style.boxShadow='0 0 0 4px #e0322e, 0 0 24px 6px rgba(224,50,46,.5)';im.style.borderRadius='6px';}}""", None)
+        time.sleep(scenes["s10"]["dur"])
+        # history with cost
         try:
-            to(page, "text=History"); page.click("text=History"); page.wait_for_timeout(500)
+            page.eval_on_selector("text=History", "el=>el.scrollIntoView({block:'center'})")
+            page.wait_for_timeout(300)
+            page.click("text=History")
+            page.wait_for_timeout(500)
         except Exception:
             pass
-        hold("s10")
-        # S11 outro — back to the top of the basis panel
-        to(page, "text=What this is based on", "start"); hold("s11")
+        scene(page, "s11", "text=History")
 
         page.wait_for_timeout(500)
         vid = page.video.path()
@@ -92,7 +95,6 @@ def main():
 
     json.dump({"marks": MARKS, "video": os.path.basename(vid)},
               open(os.path.join(HERE, "timing.json"), "w"), indent=1)
-    print("video:", vid)
     print("marks:", {k: round(v, 2) for k, v in MARKS.items()})
 
 main()

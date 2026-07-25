@@ -1,15 +1,25 @@
-# Eric YT Channel AI
+# Thumbnail Radar
 
-A local AI-powered YouTube channel analytics platform: YouTube Studio-style dashboard (views, watch time, subscribers, audience, traffic, revenue), retention curves, video hook analyzer, AI chat with Claude over all your imported data, automatic transcript extraction, comment & competitor analysis.
+A local AI-powered YouTube channel analytics platform with an **AI thumbnail generator**: YouTube Studio-style dashboard (views, watch time, subscribers, audience, traffic, revenue), retention curves, video hook analyzer, AI chat with Claude over all your imported data, automatic transcript extraction, comment & competitor analysis — and a Thumbnails tab that generates covers in the style that measurably works on your channel.
 
 > **This project runs locally on your computer.** All data lives in `data/app.db` next to this README. API keys are entered once on the **Integrations** page and stored in the local SQLite database — nothing is uploaded anywhere.
+
+## Thumbnail generator
+
+The **Ideation → Thumbnails** tab turns a video title into finished 16:9 covers built from the thumbnails that actually beat your channel's median views, plus your competitors'. See it in action: [`docs/demo/`](./docs/demo/) (English how-it-works, and a Ukrainian dark-theme walkthrough).
+
+- Reads your best-performing thumbnails and your competitors', works out the shared visual grammar (composition, colour, headline banner, recurring elements), and generates new covers that follow it.
+- Headline text is composited locally so it stays sharp and re-editable for free; the image model only paints the background.
+- Image generation runs on your own key. Choose **Gemini 3 Pro** for quality (~16¢/image) or **Flash** for about half that. OpenAI, fal and kie.ai are also supported.
+- Every run shows the price before you click and records what it actually cost after.
+- Works per-channel and in any language — nothing is hardcoded to a niche.
 
 ## Quick start
 
 Full step-by-step setup for someone who has never worked with code is in **[INSTALL.md](./INSTALL.md)**. Short version:
 
 1. Install Node.js 20+ from [nodejs.org](https://nodejs.org/)
-2. Download this repo — either as a ZIP from the green **Code** button above, or `git clone https://github.com/Bander4ik/Eric-yt-channel-ai.git`
+2. Download this repo — either as a ZIP from the green **Code** button above, or `git clone https://github.com/YT-Wizards/Thumbnail-Radar-Shkelqim.git`
 3. Run `install.bat` (Windows) or `install.command` (macOS) — installs dependencies
 4. Run `start.bat` (Windows) or `start.command` (macOS) — opens the app in your browser at `http://localhost:3000`
 5. Open **Integrations** and add your keys (minimum: Claude + Deepgram)
@@ -23,8 +33,8 @@ A web dashboard (opens in your browser at `localhost:3000`) that connects to:
 - **YouTube Data API** — video details, stats, captions
 - **Google OAuth** — your own Analytics + monetization data
 - **Apify** (optional) — fallback path for transcription + competitor scraping
-- **Exa** (optional) — semantic web search for niche research
-- **Google Gemini** (optional) — second AI brain for chat
+- **Google Gemini** — second AI brain for chat, thumbnail style analysis, and image generation
+- **Image providers** for the thumbnail generator — Gemini, OpenAI, fal, or kie.ai; several keys can be stored and switched, one active at a time
 
 ## Where your data lives
 
