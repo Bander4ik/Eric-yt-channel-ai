@@ -1,10 +1,15 @@
-# Thumbnail generator — demo
+# Thumbnail generator — demos
 
-`thumbnail-generator-demo.mp4` is a screen recording of the thumbnails
-feature running against a real channel (Daily Discoveries), narrated in
-English with burnt-in subtitles. The cover shown in the result scene was
-generated live during the recording on Gemini 3.1 Flash — it is not a
-mock-up.
+Two recordings of the thumbnails feature on a real channel (Daily
+Discoveries), each with burnt-in subtitles:
+
+- **`thumbnail-generator-demo.mp4`** — English, light theme, "how it
+  works" walkthrough. The result cover was generated **live** during the
+  recording on Gemini 3.1 Flash — not a mock-up. Scripts in this folder.
+- **`thumbnail-generator-demo-uk.mp4`** — Ukrainian, dark theme,
+  single-line subtitles, a point-by-point pass over the team lead's spec
+  showing each requirement is met. Triggers **no** generation, so it
+  spends nothing; it shows covers already in history. Scripts in `uk/`.
 
 ## What it walks through
 
