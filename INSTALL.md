@@ -25,9 +25,20 @@ You need **one** program installed before the app will run: Node.js. That's it.
 - **Windows**: press the **Windows key**, type `cmd`, hit Enter. A black window opens. Type `node -v` and press Enter. You should see something like `v20.18.0`. If yes — done. If you get "command not found", reboot your computer and try again.
 - **macOS**: open **Terminal** (press ⌘+Space, type `Terminal`, hit Enter). Type `node -v` and press Enter. Same expected output.
 
-### 1.2 (Windows only) Install Python 3 — optional but recommended
+### 1.2 (Windows only) Install "Visual Studio Build Tools" — recommended before you install
 
-The transcription engine ships a small helper that may need Python during install. If you skip this and the install fails with a message about Python, come back here.
+The app's database engine is not plain code — it's partly written in a lower-level language (C++) and needs to be "compiled" (translated into a form your computer can run) the first time you install. Windows doesn't come with the tool that does this translation, so it's worth installing it up front to avoid a failed install later.
+
+1. Open [https://visualstudio.microsoft.com/visual-cpp-build-tools/](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and download the installer.
+2. Run it. When the list of "workloads" appears, check **Desktop development with C++**.
+3. Click **Install**. This can take 10–15 minutes and several GB of disk space — that's normal.
+4. Once it finishes, you can continue to Part 2.
+
+If you'd rather skip this for now: it's fine, just come back here if `install.bat` later fails and mentions the database engine or a compiler.
+
+### 1.3 (Windows only) Install Python 3 — optional, secondary fallback
+
+The transcription engine ships a small helper that may occasionally need Python during install. This is a much rarer cause of install failures than the Build Tools above — most Windows install failures are fixed by 1.2, not this step. If you skip this and the install fails with a message specifically about Python, come back here.
 
 1. Open the Microsoft Store.
 2. Search for `Python 3.12`.
@@ -42,7 +53,7 @@ The transcription engine ships a small helper that may need Python during instal
 
 The project lives on GitHub at:
 
-**https://github.com/Bander4ik/Eric-yt-channel-ai**
+**https://github.com/YT-Wizards/YouTube-Channel-AI-VIP**
 
 You have two ways to download it. Pick **one**. If you don't know which, pick Option A — it's the simplest and works exactly the same.
 
@@ -50,14 +61,14 @@ You have two ways to download it. Pick **one**. If you don't know which, pick Op
 
 No account, no extra tools. Best if you just want to run the app.
 
-1. Open **[https://github.com/Bander4ik/Eric-yt-channel-ai](https://github.com/Bander4ik/Eric-yt-channel-ai)** in your browser.
+1. Open **[https://github.com/YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP)** in your browser.
 2. Find the green **`<> Code`** button (near the top, above the file list) → click it.
 3. In the dropdown, click **Download ZIP** (at the bottom).
-4. The ZIP downloads to your **Downloads** folder. It will be named `Eric-yt-channel-ai-main.zip`.
+4. The ZIP downloads to your **Downloads** folder. It will be named `YouTube-Channel-AI-VIP-main.zip`.
 5. Extract it:
    - **Windows**: right-click the ZIP → **Extract All...** → **Extract**.
    - **macOS**: double-click the ZIP.
-6. You now have a folder called `Eric-yt-channel-ai-main` containing `package.json`, `README.md`, `install.bat`, `start.bat`, etc.
+6. You now have a folder called `YouTube-Channel-AI-VIP-main` containing `package.json`, `README.md`, `install.bat`, `start.bat`, etc.
 
 ### Option B — Clone via GitHub Desktop (recommended if you'll get updates)
 
@@ -67,9 +78,9 @@ If the developer is going to push fixes and you want one-click updates without r
 2. Open GitHub Desktop. You can sign in with a GitHub account or skip — both work since the repo is public.
 3. **File → Clone repository...** → tab **URL** at the top → paste:
    ```
-   https://github.com/Bander4ik/Eric-yt-channel-ai
+   https://github.com/YT-Wizards/YouTube-Channel-AI-VIP
    ```
-4. **Local path** → pick a folder (default `Documents/GitHub/Eric-yt-channel-ai` is fine) → **Clone**.
+4. **Local path** → pick a folder (default `Documents/GitHub/YouTube-Channel-AI-VIP` is fine) → **Clone**.
 5. Done. To update later: open GitHub Desktop → click **Fetch origin** → if there are new changes, click **Pull origin**.
 
 ### 2.x — Move the folder somewhere safe
@@ -80,8 +91,8 @@ This applies to **both options**.
 
 Move (drag-and-drop is fine) the folder to:
 
-- **Windows**: `C:\Users\<your name>\Documents\Eric-yt-channel-ai`
-- **macOS**: `~/Documents/Eric-yt-channel-ai` (under `Macintosh HD/Users/<your name>/Documents/`)
+- **Windows**: `C:\Users\<your name>\Documents\YouTube-Channel-AI-VIP`
+- **macOS**: `~/Documents/YouTube-Channel-AI-VIP` (under `Macintosh HD/Users/<your name>/Documents/`)
 
 > ⚠️ **Don't put the project inside a cloud-sync folder.** OneDrive, iCloud Drive, Dropbox, and Google Drive all silently sync changes to the cloud as you work. The app's SQLite database is touched constantly while the app runs, and these sync services can corrupt the database's WAL files. Keep the project under plain `Documents` (outside any synced subfolder), on your **Desktop**, or in a folder like `C:\dev\` (Windows) / `~/code/` (macOS). Anywhere NOT inside iCloud / OneDrive / Dropbox.
 
@@ -89,23 +100,25 @@ Move (drag-and-drop is fine) the folder to:
 
 ## Part 3 — First-time setup (one-time only)
 
-You should now have a folder like `Documents/Eric-yt-channel-ai` containing files like `package.json`, `README.md`, `install.bat`, `start.bat`, etc.
+You should now have a folder like `Documents/YouTube-Channel-AI-VIP` containing files like `package.json`, `README.md`, `install.bat`, `start.bat`, etc.
 
 ### 3.1 Run the installer
 
 This downloads everything the app needs (~300 MB of code libraries). It takes **2–5 minutes** depending on your internet speed.
 
-- **Windows**: double-click `install.bat` in the project folder. A black terminal window opens. You'll see lots of lines scrolling — that's normal. **Wait until it says "Installation complete!"** and asks you to press a key. **Don't close the window early** — interrupting npm mid-install leaves a half-broken `node_modules` folder.
+- **Windows**: double-click `install.bat` in the project folder. A black terminal window opens. It will sit there looking frozen for several minutes — that's normal, the details are being written to `install-log.txt` instead of to the screen. **Wait until it says "Installation complete!"** and asks you to press a key. **Don't close the window early** — interrupting npm mid-install leaves a half-broken `node_modules` folder.
 - **macOS**: double-click `install.command`. If macOS shows a popup "cannot be opened because it is from an unidentified developer":
   - Right-click `install.command` → **Open**.
   - In the popup, click **Open**.
   - macOS remembers your choice; next time it'll just open.
 
-> **If install fails**: read the last few lines of the terminal. Common causes:
+> **If install fails**: every run now writes a file called `install-log.txt` in the project folder — the fastest way to get help is to send us that one file, no screenshots needed. Beyond that, in priority order:
+> - **Send `install-log.txt` to your developer.** It contains the full details the terminal window can't show you all at once.
+> - **(Windows) Install "Visual Studio Build Tools"** with the "Desktop development with C++" workload — see step 1.2. This is the #1 cause of a failed Windows install (the database engine needs it to compile).
+> - **Delete the `node_modules` folder** if it exists, then re-run `install.bat` / `install.command`.
+> - **Python** (step 1.3) is only a secondary, much less common cause — try it after the steps above, not before.
 > - "Node.js not found" → go back to step 1.1.
-> - "python not found" or "youtube-dl-exec needs Python" → install Python (step 1.2).
 > - "EACCES permission denied" (macOS) → run `sudo chmod +x install.command start.command` in Terminal, from the project folder, then double-click again.
-> - "ENOENT" or weird npm errors → delete the `node_modules` folder if it exists, then re-run `install.bat` / `install.command`.
 
 ### 3.2 Test that it starts
 
@@ -140,7 +153,7 @@ Without this, the AI chat, hook analyzer, and competitor analysis are all disabl
 
 1. Go to [https://console.anthropic.com/](https://console.anthropic.com/) → sign in or create an account (any personal email works).
 2. Add a payment method: **Billing → Plans → Add credit card**. New accounts often get $5 of free credit.
-3. **API Keys → Create Key** → name it `eric-yt-channel-ai` → **Create Key** → **copy the key** (starts with `sk-ant-...`). You only see it once — copy now.
+3. **API Keys → Create Key** → name it `youtube-channel-ai-vip` → **Create Key** → **copy the key** (starts with `sk-ant-...`). You only see it once — copy now.
 4. In the app: **Integrations** → paste into **Claude (Anthropic)** → **Save**. The status chip should flip to green "Connected".
 
 > Typical spend: $1–10 / month for light use. Heavy chat use with the Opus advisor can hit $30+ — the **Claude usage** widget on the Integrations page shows live spend so you can watch it.
@@ -150,7 +163,7 @@ Without this, the AI chat, hook analyzer, and competitor analysis are all disabl
 This is what generates transcripts for videos that don't have YouTube captions. The app runs `yt-dlp` locally to pull audio, streams it to Deepgram, and saves the text. Without Deepgram, you only get YouTube's free `[CC]` captions (≈80% of videos have them).
 
 1. Go to [https://console.deepgram.com/](https://console.deepgram.com/) → sign up. **You get $200 of free credit** — enough for ~770 hours of audio.
-2. **API Keys → Create a New API Key** → name it `eric-yt-channel-ai` → permissions: **Member** → **Create Key** → **copy the key**.
+2. **API Keys → Create a New API Key** → name it `youtube-channel-ai-vip` → permissions: **Member** → **Create Key** → **copy the key**.
 3. In the app: **Integrations** → paste into **Deepgram (speech-to-text)** → **Save**.
 
 > Cost after free credit: $0.0043/min ($0.26/hour). The **Deepgram usage** widget tracks spend.
@@ -158,7 +171,7 @@ This is what generates transcripts for videos that don't have YouTube captions. 
 ### 4.3 YouTube Data API key — REQUIRED to add channels
 
 1. Go to [https://console.cloud.google.com/](https://console.cloud.google.com/).
-2. Top of page → **Select a project** → **New Project** → name it `eric-yt-channel-ai` → **Create**.
+2. Top of page → **Select a project** → **New Project** → name it `youtube-channel-ai-vip` → **Create**.
 3. Wait ~10 seconds for the project to be created. Make sure you're inside it (top of page should show its name).
 4. Left menu → **APIs & Services → Library** → search for **YouTube Data API v3** → click it → **Enable**.
 5. Left menu → **APIs & Services → Credentials** → **+ Create Credentials** → **API key**. Copy the key (starts with `AIza...`).
@@ -174,7 +187,7 @@ This is what lets the app pull real Analytics data (views over time, retention, 
 1. In the same Google Cloud project as step 4.3, enable **YouTube Analytics API** the same way (**APIs & Services → Library** → search → **Enable**).
 2. **APIs & Services → OAuth consent screen**:
    - **User Type**: External → **Create**.
-   - **App name**: `Eric YT Channel AI`. **User support email**: your email. **Developer contact email**: your email. **Save and continue**.
+   - **App name**: `YouTube Channel AI VIP`. **User support email**: your email. **Developer contact email**: your email. **Save and continue**.
    - **Scopes** → **Add or remove scopes** → add all three:
      - `https://www.googleapis.com/auth/yt-analytics.readonly`
      - `https://www.googleapis.com/auth/yt-analytics-monetary.readonly`
@@ -183,7 +196,7 @@ This is what lets the app pull real Analytics data (views over time, retention, 
    - **Test users** → **Add users** → add the email of every Google account that owns a YouTube channel you'll be analyzing. **Save and continue → Back to dashboard**.
 3. **APIs & Services → Credentials → + Create Credentials → OAuth client ID**:
    - **Application type**: Web application.
-   - **Name**: `eric-yt-channel-ai`.
+   - **Name**: `youtube-channel-ai-vip`.
    - **Authorized redirect URIs** → **Add URI** → paste **exactly**:
      ```
      http://localhost:3000/api/youtube/oauth/callback
@@ -271,8 +284,8 @@ How you update depends on which option you used in Part 2.
 ### If you used Option A (ZIP download)
 
 1. **Stop the app** (close the terminal window).
-2. **Rename your current project folder** to `Eric-yt-channel-ai-old`. Don't delete it yet — we need one folder from it.
-3. Re-download the ZIP from **[github.com/Bander4ik/Eric-yt-channel-ai](https://github.com/Bander4ik/Eric-yt-channel-ai)** → green **Code** button → **Download ZIP**. Extract it.
+2. **Rename your current project folder** to `YouTube-Channel-AI-VIP-old`. Don't delete it yet — we need one folder from it.
+3. Re-download the ZIP from **[github.com/YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP)** → green **Code** button → **Download ZIP**. Extract it.
 4. Open the **OLD** folder, find the `data` subfolder, and **copy it into the NEW folder**. This preserves your API keys, OAuth tokens, channels, transcripts, chat history — everything you've set up.
 5. Inside the new folder, run `install.bat` / `install.command` once (dependencies may have changed), then `start.bat` / `start.command`.
 6. Once you've verified the new version works and your data is intact, delete the `-old` folder.
