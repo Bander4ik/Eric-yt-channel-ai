@@ -1,0 +1,39 @@
+1
+00:00:06,846 --> 00:00:14,214
+This is the thumbnail generator, running
+live on a real YouTube channel: Daily Discoveries, twenty thousand subscribers.
+
+2
+00:00:14,622 --> 00:00:24,318
+It starts from evidence. It reads the
+thumbnails that already beat this channel's median views. Twelve of its own top performers, and twelve from its tracked competitors.
+
+3
+00:00:24,725 --> 00:00:36,293
+From those, the model builds a style
+profile: an aerial landscape, a red arrow on the subject, and a bold white headline on a solid red banner. Every trait lists the videos that prove it.
+
+4
+00:00:36,298 --> 00:00:45,850
+Image generation runs on the channel
+owner's own Gemini key. You choose the model. Gemini 3 Pro for the best quality, or Flash for about half the cost.
+
+5
+00:00:46,163 --> 00:00:52,883
+To make a cover, you give it a video title
+and press one button. The price is shown on the button before a cent is spent.
+
+6
+00:00:52,884 --> 00:01:02,292
+Generation runs as a background job, so
+you can leave the page and it keeps working. Right now it is calling Gemini live, painting a background in the channel's own style.
+
+7
+00:01:05,264 --> 00:01:16,208
+And here is the result. An aerial dead
+valley, the red arrow, the headline on the red banner. It is in English, because the profile learned the channel's language, not the subject of the video.
+
+8
+00:01:17,056 --> 00:01:26,752
+Every run records what it actually cost.
+Sixteen cents on Pro, nine on Flash. Real covers, from real channel data, with the real spend written down.
