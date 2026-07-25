@@ -54,7 +54,7 @@ export async function POST(req: Request) {
  */
 export async function PUT() {
   const result = await sendTelegramMessage(
-    "✅ <b>YT Channel AI test</b>\n\nIf you can read this, your alerts are wired up correctly."
+    "✅ <b>YouTube Channel AI VIP test</b>\n\nIf you can read this, your alerts are wired up correctly."
   );
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.error }, { status: 400 });

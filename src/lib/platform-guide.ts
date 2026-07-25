@@ -2,7 +2,7 @@ import "server-only";
 
 /**
  * Platform guide — the single source of truth on what every page,
- * button, and feature of "YT Channel AI" does.
+ * button, and feature of "YouTube Channel AI VIP" does.
  *
  * Why this exists: the chat AI is expected to answer "how does X work",
  * "where do I find Y", "why is Z empty" questions about the app itself,
@@ -45,7 +45,7 @@ export const PLATFORM_GUIDE_TOPICS: PlatformGuideTopic[] = [
 ];
 
 const SECTIONS: Record<PlatformGuideTopic, string> = {
-  overview: `# YT Channel AI — what this app is
+  overview: `# YouTube Channel AI VIP — what this app is
 
 A local desktop application for YouTube creators and their teams. It
 runs on the user's own machine (Next.js server + a local SQLite

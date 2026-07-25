@@ -1,6 +1,6 @@
 # Thumbnail Generator — Specification
 
-Date: 2026-07-24 · Repo: `YT-Wizards/Eric-yt-channel-ai` · Source brief: [`PROJECT-BRIEF.md`](../../PROJECT-BRIEF.md)
+Date: 2026-07-24 · Repo: `YT-Wizards/YouTube-Channel-AI-VIP` · Source brief: [`PROJECT-BRIEF.md`](../../PROJECT-BRIEF.md)
 
 ## Executive Summary
 

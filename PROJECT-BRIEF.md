@@ -1,6 +1,6 @@
-# Eric YT Channel AI — що це, як влаштовано і що будуємо далі
+# YouTube Channel AI VIP — що це, як влаштовано і що будуємо далі
 
-> YT-Wizards / Eric-yt-channel-ai · документ для розробника · липень 2026
+> YT-Wizards / YouTube-Channel-AI-VIP · документ для розробника · липень 2026
 > (повна конвертація `Eric-project-brief.html` у markdown, без пропусків)
 
 Локальна платформа аналітики YouTube-каналів з AI-ядром. Цей документ дає повний контекст:
@@ -102,7 +102,7 @@ Auto-categorize (обидві — фонові джоби, переживают�
 
 ## Як ми сюди дійшли — ключові коміти
 
-Повна історія — `git log` у репо [YT-Wizards/Eric-yt-channel-ai](https://github.com/YT-Wizards/Eric-yt-channel-ai).
+Повна історія — `git log` у репо [YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP).
 Позначені **★** — головні віхи.
 
 ### ★ `f3dd6b0` · 05.07 · Надійність AI-чату + мультиканальний синк
@@ -221,6 +221,6 @@ Junction-таблиця `competitor_owners` (різні ніші юзера бі
 
 ---
 
-Репозиторій: [github.com/YT-Wizards/Eric-yt-channel-ai](https://github.com/YT-Wizards/Eric-yt-channel-ai) ·
+Репозиторій: [github.com/YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP) ·
 локальний запуск: `npm install` → `npm run dev` (база створиться сама в `data/`) ·
 питання по продукту — до Влада.

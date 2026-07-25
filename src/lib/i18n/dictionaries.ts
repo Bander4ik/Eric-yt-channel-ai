@@ -409,7 +409,7 @@ type DictionaryShape = {
 export const dictionaries: { en: DictionaryShape } = {
   en: {
     app: {
-      name: "YT Channel AI",
+      name: "YouTube Channel AI VIP",
       tagline: "AI-powered YouTube channel analytics",
     },
     nav: {

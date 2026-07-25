@@ -18,10 +18,10 @@ Open the folder where your project currently lives. **If the path contains `OneD
 
 1. Make sure the app is **not running** (close any `start.bat` terminal window).
 2. Open **File Explorer** (yellow folder icon on the taskbar).
-3. Find your current project folder. Likely path: `OneDrive\Desktop\Eric-yt-channel-ai-main` or similar.
+3. Find your current project folder. Likely path: `OneDrive\Desktop\YouTube-Channel-AI-VIP-main` or similar.
 4. Pick a new safe home for it. Good options:
-   - `C:\Eric-yt-channel-ai` (right at the root of your C: drive — this is never synced)
-   - `C:\Users\<your-name>\Documents\Eric-yt-channel-ai` (only if your `Documents` folder does NOT show a small cloud icon next to it; if it does, use the first option)
+   - `C:\YouTube-Channel-AI-VIP` (right at the root of your C: drive — this is never synced)
+   - `C:\Users\<your-name>\Documents\YouTube-Channel-AI-VIP` (only if your `Documents` folder does NOT show a small cloud icon next to it; if it does, use the first option)
 5. **Drag the entire project folder** from its current location to the new location.
 6. Done. From now on, run `install.bat` and `start.bat` from the new location, not the old one.
 
@@ -55,35 +55,35 @@ We're keeping the old folder around for a few minutes — there's one folder ins
 
 1. Open **File Explorer**.
 2. Navigate to where your project folder lives.
-3. Right-click on the project folder (e.g. `Eric-yt-channel-ai-main`) → **Rename**.
-4. Add `-old` to the end of the name. Example: `Eric-yt-channel-ai-main` becomes `Eric-yt-channel-ai-main-old`.
+3. Right-click on the project folder (e.g. `YouTube-Channel-AI-VIP-main`) → **Rename**.
+4. Add `-old` to the end of the name. Example: `YouTube-Channel-AI-VIP-main` becomes `YouTube-Channel-AI-VIP-main-old`.
 5. Press **Enter** to confirm.
 
 ### Step 3. Download the new ZIP
 
 1. Open this link in your web browser:
-   **[https://github.com/Bander4ik/Eric-yt-channel-ai](https://github.com/Bander4ik/Eric-yt-channel-ai)**
+   **[https://github.com/YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP)**
 2. Above the file list near the top of the page, find the **green `<> Code` button** and click it.
 3. In the dropdown menu that opens, click **Download ZIP** (at the bottom).
-4. A ZIP file starts downloading. It will be named `Eric-yt-channel-ai-main.zip` and lands in your **Downloads** folder.
+4. A ZIP file starts downloading. It will be named `YouTube-Channel-AI-VIP-main.zip` and lands in your **Downloads** folder.
 
 ### Step 4. Extract the new ZIP
 
 1. Open your **Downloads** folder in File Explorer.
 2. Find the new ZIP file → right-click → **Extract All...**
-3. Click **Extract**. A new folder appears next to the ZIP, called `Eric-yt-channel-ai-main`.
+3. Click **Extract**. A new folder appears next to the ZIP, called `YouTube-Channel-AI-VIP-main`.
 4. **Move this new folder to the same safe location as the `-old` one.** (Drag-and-drop is fine.) You should now have both folders side by side:
-   - `Eric-yt-channel-ai-main` (the new one — fresh code)
-   - `Eric-yt-channel-ai-main-old` (the old one — still has your data)
+   - `YouTube-Channel-AI-VIP-main` (the new one — fresh code)
+   - `YouTube-Channel-AI-VIP-main-old` (the old one — still has your data)
 
 ### Step 5. Bring your saved data across (CRITICAL — don't skip)
 
 This is the most important step. Without it, the new version starts blank — no API keys, no channels, no transcripts.
 
-1. Open the **OLD** folder (`Eric-yt-channel-ai-main-old`).
+1. Open the **OLD** folder (`YouTube-Channel-AI-VIP-main-old`).
 2. Inside it, look for a folder called exactly **`data`** (four lowercase letters). This is where everything you've set up is stored.
 3. Right-click on the `data` folder → **Copy** (or just press **Ctrl+C**).
-4. Now navigate to the **NEW** folder (`Eric-yt-channel-ai-main`).
+4. Now navigate to the **NEW** folder (`YouTube-Channel-AI-VIP-main`).
 5. Paste it in: right-click in an empty area inside the new folder → **Paste** (or **Ctrl+V**).
 6. If Windows asks: **"The destination already has a folder named 'data'. Do you want to merge?"** or **"Replace the files in the destination?"** → click **Replace the files in the destination** (or **Yes**). The fresh ZIP comes with an empty `data` folder; we're overwriting it with your real one.
 
@@ -145,7 +145,7 @@ Find GitHub Desktop in your Start menu and open it.
 
 ### Step 3. Fetch and pull
 
-1. At the top of GitHub Desktop, make sure the **"Current repository"** dropdown (top-left) shows `Eric-yt-channel-ai`. If it doesn't, click the dropdown and pick it.
+1. At the top of GitHub Desktop, make sure the **"Current repository"** dropdown (top-left) shows `YouTube-Channel-AI-VIP`. If it doesn't, click the dropdown and pick it.
 2. Look for the **Fetch origin** button near the top (or sometimes labeled "Fetch"). Click it.
 3. GitHub Desktop checks the project on GitHub for any new changes. After a second or two, the button changes:
    - If it says **"Pull origin"** with a downward arrow and a number (e.g. "Pull origin · 3 commits behind") → there are new changes. Click it.
@@ -200,9 +200,9 @@ You can sign in with a GitHub account or skip the sign-in step — both work for
 2. A window opens with three tabs at the top. Click the **URL** tab.
 3. In the box labeled "Repository URL", paste:
    ```
-   https://github.com/Bander4ik/Eric-yt-channel-ai
+   https://github.com/YT-Wizards/YouTube-Channel-AI-VIP
    ```
-4. **Local path**: this is where the project will live on your computer. The default (something like `C:\Users\<your-name>\Documents\GitHub\Eric-yt-channel-ai`) is fine **as long as Documents is not OneDrive-synced**. If it is, click **Choose...** and pick a non-synced location instead (e.g. `C:\Eric-yt-channel-ai-git`).
+4. **Local path**: this is where the project will live on your computer. The default (something like `C:\Users\<your-name>\Documents\GitHub\YouTube-Channel-AI-VIP`) is fine **as long as Documents is not OneDrive-synced**. If it is, click **Choose...** and pick a non-synced location instead (e.g. `C:\YouTube-Channel-AI-VIP-git`).
 5. Click **Clone**. GitHub Desktop downloads the project. Takes 10-30 seconds.
 
 #### Step 3. Bring your data into the new clone
@@ -236,7 +236,7 @@ From now on, every update is just:
 
 ### "I don't see a green `<> Code` button on GitHub"
 
-You might be looking at a specific file inside the repository instead of the main page. Make sure the URL bar just shows `https://github.com/Bander4ik/Eric-yt-channel-ai` (with no extra path after it). If it has `/blob/`, `/tree/`, or anything else after `Eric-yt-channel-ai`, click the repository name at the very top to go back to the main view.
+You might be looking at a specific file inside the repository instead of the main page. Make sure the URL bar just shows `https://github.com/YT-Wizards/YouTube-Channel-AI-VIP` (with no extra path after it). If it has `/blob/`, `/tree/`, or anything else after `YouTube-Channel-AI-VIP`, click the repository name at the very top to go back to the main view.
 
 ### "install.bat failed with an error"
 
@@ -278,7 +278,7 @@ You have another `start.bat` running somewhere, or another app is using that por
 **Update via ZIP (Path A):**
 1. Stop the app (close terminal)
 2. Rename current folder to add `-old`
-3. Download fresh ZIP from [github.com/Bander4ik/Eric-yt-channel-ai](https://github.com/Bander4ik/Eric-yt-channel-ai) (green Code button → Download ZIP)
+3. Download fresh ZIP from [github.com/YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP) (green Code button → Download ZIP)
 4. Extract to the same safe location as `-old`
 5. Copy `data` folder from `-old` into the new folder
 6. Run `install.bat` → wait for "Installation complete!"

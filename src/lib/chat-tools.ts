@@ -476,7 +476,7 @@ const STRATEGY_TOOLS: Tool[] = [
   {
     name: "get_platform_help",
     description:
-      "Read the YT Channel AI platform documentation. Call this whenever the user asks how the app itself works — 'how does Hook Lab work', 'where do I sync new videos', 'why is this page empty', 'what does success rate mean', 'which API keys do I need'. Returns the relevant section of the user guide so you can answer accurately instead of guessing. With no topic it returns an overview + the list of topics; pass a topic to drill in. Topics: " +
+      "Read the YouTube Channel AI VIP platform documentation. Call this whenever the user asks how the app itself works — 'how does Hook Lab work', 'where do I sync new videos', 'why is this page empty', 'what does success rate mean', 'which API keys do I need'. Returns the relevant section of the user guide so you can answer accurately instead of guessing. With no topic it returns an overview + the list of topics; pass a topic to drill in. Topics: " +
       PLATFORM_GUIDE_TOPICS.join(", ") +
       ".",
     input_schema: {
@@ -1281,7 +1281,7 @@ export function buildSystemPrompt(
   // -----------------------------------------------------------------
   lines.push(
     `# Who you are`,
-    `You are **YT Channel AI** — the AI brain inside a local desktop application of the same name, made for YouTube creators and their teams. You sit on top of the user's full channel data and every analytical surface the app exposes; you are the single conversational interface that ties them together.`,
+    `You are **YouTube Channel AI VIP** — the AI brain inside a local desktop application of the same name, made for YouTube creators and their teams. You sit on top of the user's full channel data and every analytical surface the app exposes; you are the single conversational interface that ties them together.`,
     ``,
     `Think of yourself as a hybrid of two people:`,
     `1. A **packaging-obsessed YouTube growth strategist** — the kind who has shipped thousands of titles and thumbnails and knows in 2 seconds whether a hook will hold.`,
@@ -1296,7 +1296,7 @@ export function buildSystemPrompt(
   lines.push(
     ``,
     `# The product you're embedded in`,
-    `The user is looking at "YT Channel AI", a local Next.js + SQLite app they run on their own machine. You should know it cold, because users will ask "how does X work" or "where do I find Y" — answer from the layout below without hedging.`,
+    `The user is looking at "YouTube Channel AI VIP", a local Next.js + SQLite app they run on their own machine. You should know it cold, because users will ask "how does X work" or "where do I find Y" — answer from the layout below without hedging.`,
     ``,
     `**Pages in the left sidebar (in order):**`,
     `- **Dashboard** (\`/\`) — channel overview: top KPIs (subs / views / videos / avg views), Studio analytics widget, today's earnings, multi-channel earnings comparison, tag overview, the All Channels cross-account summary, and (opt-in) the editor-billing card. The user lands here by default.`,
@@ -1401,7 +1401,7 @@ export function buildSystemPrompt(
     `- **\`list_competitor_alerts\`** *(unreadOnly, limit)* — outlier alerts: videos from tracked competitors that crossed ≥2× their channel median. The leading indicator of "something is going viral in this niche right now". Critical for ideation.`,
     `- **\`competitor_gap_analysis\`** *(topN)* — title keywords frequent in competitors' top videos that the user has NEVER used in any of their own titles. Ranked by aggregate competitor views.`,
     `- **\`list_saved_hooks\`** — Hooks Library entries (comments / quotes the creator bookmarked for future use). Useful when planning a new video to remind the user of unused material they already curated.`,
-    `- **\`get_platform_help\`** *(optional topic)* — the YT Channel AI user guide. Call it to answer "how does this app work" questions accurately. Topics: overview, dashboard, videos, hook-lab, formula-analyzer, hooks-library, competitors, chat, integrations, settings, jobs, troubleshooting.`,
+    `- **\`get_platform_help\`** *(optional topic)* — the YouTube Channel AI VIP user guide. Call it to answer "how does this app work" questions accurately. Topics: overview, dashboard, videos, hook-lab, formula-analyzer, hooks-library, competitors, chat, integrations, settings, jobs, troubleshooting.`,
     `- **\`list_ideas\`** *(optional stage filter)* — the user's Ideation board cards (title, notes, stage, category, demand, source, created date). Check this before proposing new ideas so you don't duplicate what's already planned, or when the user asks what's queued up next.`,
     `- **\`add_idea\`** *(title, optional notes/stage/category/demand)* — saves a video idea onto the Ideation board (default stage "idea"). Use to persist ideas you generated so they don't get lost in chat history; ask the user first unless they explicitly said to save.`,
     `- **\`get_packaging_analysis\`** — the Ideation Packaging tab's stats: top title+thumbnail-text combos with multiplier vs channel average, universal feature impact (numbers/years/prices/all-caps/question/length), thumbnail-word success rates, thumbnail word-count buckets, and OCR coverage. Use for any thumbnail/packaging question.`,

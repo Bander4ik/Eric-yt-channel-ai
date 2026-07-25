@@ -66,7 +66,7 @@ export function proxy(req: NextRequest) {
     headers: {
       // The realm string shows up in some browsers' login dialog title.
       // Keep it short and recognisable.
-      "WWW-Authenticate": 'Basic realm="YT Channel AI", charset="UTF-8"',
+      "WWW-Authenticate": 'Basic realm="YouTube Channel AI VIP", charset="UTF-8"',
     },
   });
 }
