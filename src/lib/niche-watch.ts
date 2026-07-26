@@ -170,6 +170,24 @@ function isUnsegmentableScript(text: string): boolean {
  * covers Russian/Ukrainian/Bulgarian/Serbian/etc., Arabic script covers
  * Arabic/Persian/Urdu) are intentionally left out of value positions
  * where that ambiguity would matter — see the per-language entries.
+ *
+ * THIS TABLE CANNOT BE DELETED: script comparison alone can never catch
+ * the client's original complaint, because "Bangladesh space
+ * documentary bangla" is written entirely in Latin letters — same
+ * script as a Latin-script English query. Only the word "bangla" itself
+ * gives away the mismatch.
+ *
+ * BUT IT MUST STAY NARROW: naively flagging a mismatch the moment ANY
+ * of these words appears anywhere in the text is wrong in the other
+ * direction — "The Japanese Space Program Explained" and "Korean Drama
+ * Recap" are legitimate English-language videos that merely mention a
+ * country/language as their SUBJECT, not a label on the content's own
+ * language. A huge share of real niches (anime, K-pop, world news,
+ * language-learning, geopolitics...) would silently lose results if
+ * every topical mention triggered a drop. See findLanguageLabel() below
+ * for the context rules that keep this to only genuine labels — trailing
+ * qualifiers, brackets, "in X", "X dubbed/subbed/version" — and not
+ * adjectives in front of a subject.
  */
 const LANGUAGE_LABEL_SCRIPT: Record<string, string> = {
   hindi: "devanagari", marathi: "devanagari", nepali: "devanagari",
@@ -185,6 +203,103 @@ const LANGUAGE_LABEL_SCRIPT: Record<string, string> = {
   italian: "latin", portuguese: "latin", vietnamese: "latin", indonesian: "latin",
   turkish: "latin", swahili: "latin", filipino: "latin", tagalog: "latin",
 };
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * True if `word` appears in `text` in a position that plausibly LABELS
+ * the content's own language, rather than merely naming it as a topic.
+ * Real-world self-labels show up as trailing qualifiers, bracketed
+ * tags, or fixed phrases ("in Hindi", "Hindi dubbed", "dubbed Hindi",
+ * "Hindi version/audio/subtitles") — never as an adjective directly in
+ * front of the subject ("Japanese Space Program", "Korean Drama"),
+ * which is what this deliberately does NOT match.
+ */
+function isLanguageLabelInContext(text: string, word: string): boolean {
+  const w = escapeRegExp(word);
+  const patterns = [
+    new RegExp(`\\bin\\s+${w}\\b`, "iu"),
+    new RegExp(
+      `\\b${w}\\s+(dub(?:bed)?|sub(?:bed|s|title[ds]?)?|version|audio|track|language|edition)\\b`,
+      "iu"
+    ),
+    new RegExp(`\\b(dub(?:bed)?|sub(?:bed)?|full|official)\\s+${w}\\b`, "iu"),
+    new RegExp(`[([]\\s*${w}\\s*[)\\]]`, "iu"),
+    // Deliberately NO bare "after a separator" rule. It reads as a label
+    // in "Space Doc - Bangla" but fires just as happily on "Documentary |
+    // Russian Revolution Explained", where the word is the subject. Real
+    // self-labels after a separator almost always carry a qualifier too
+    // ("- Bangla Dubbed", "| Hindi Version"), which the patterns above
+    // already catch, so the bare form costs more than it earns.
+  ];
+  return patterns.some((re) => re.test(text));
+}
+
+/** Lowercase words of `text`, in original order (unlike tokenizeText's
+ * Set, order matters here for the "last word of the title" rule). */
+function wordsInOrder(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/**
+ * Finds a genuine language self-label in `title`/`description`, or
+ * null. Two ways in:
+ *   1. Any LANGUAGE_LABEL_SCRIPT word used in a labeling context
+ *      anywhere in title+description — see isLanguageLabelInContext.
+ *   2. The label word is the LAST word of the title specifically (the
+ *      client's exact case, "... bangla") — trailing position is
+ *      itself a strong-enough signal even with no other marker, but
+ *      only in the title (a random label-shaped word buried at the end
+ *      of a long description is much more likely to be incidental).
+ * Deliberately does NOT match a label word used anywhere else (e.g. as
+ * the first word, or mid-sentence with no context) — that's the
+ * "Japanese Space Program" / "Korean Drama" case, a topic, not a label.
+ */
+function findLanguageLabel(
+  title: string,
+  description: string,
+  topicWords: Set<string>
+): string | null {
+  const combined = `${title} ${description}`;
+  for (const word of Object.keys(LANGUAGE_LABEL_SCRIPT)) {
+    // A language the user themselves typed is their SUBJECT, not a marker
+    // that this result is in the wrong language. Someone whose niche is
+    // "japanese space program" must not have every Japanese-mentioning
+    // result thrown away as foreign.
+    if (topicWords.has(word)) continue;
+    if (isLanguageLabelInContext(combined, word)) return LANGUAGE_LABEL_SCRIPT[word];
+  }
+
+  // Trailing-word rule. This is the one that catches the case this whole
+  // filter was built for -- "Bangladesh space documentary bangla", a
+  // Latin-script title no script comparison could ever flag.
+  //
+  // KNOWN LIMIT, on purpose: "How I Learned Japanese" and "Everything
+  // about the Japanese" are structurally identical to it -- language word,
+  // last position, no qualifier -- so they get dropped too. Separating
+  // them needs English part-of-speech rules ("the Japanese" is a noun
+  // phrase, "documentary bangla" is an appended tag), and baking English
+  // grammar into this is precisely the "built around one language" mistake
+  // this module was rewritten to remove. The two are also close to
+  // unreachable: a candidate only reaches the language check after passing
+  // relevance, and a title like these only passes relevance for a query
+  // about that language -- in which case topicWords above already spares
+  // it. Widening the rule is not worth the blast radius; deleting it
+  // reopens the original bug.
+  const titleWords = wordsInOrder(title);
+  const last = titleWords[titleWords.length - 1];
+  if (titleWords.length > 1 && last && !topicWords.has(last)) {
+    const labelScript = LANGUAGE_LABEL_SCRIPT[last];
+    if (labelScript) return labelScript;
+  }
+
+  return null;
+}
 
 /** Best-effort ISO-639-1 hint for searchYouTube's relevanceLanguage,
  * used ONLY for scripts that map to one dominant YouTube-content
@@ -209,25 +324,37 @@ export type NicheScanResult = {
 
 /**
  * Infers what script/language this scan should expect, from the user's
- * own material only — never a hardcoded default:
- *   1. The niche query itself, if it's written in a recognizable script.
- *   2. Failing that, the active channel's own recent video titles.
- *   3. Failing that, null — meaning "unknown", which callers must treat
- *      as "apply no language filter at all" (fail open).
+ * own material only — never a hardcoded default. Resolves the query's
+ * own script against the active channel's own recent video titles
+ * rather than short-circuiting on whichever is checked first, because a
+ * romanized (Latin-typed) query is confidently "Latin" even when the
+ * user's own channel is written in Devanagari/Cyrillic/etc — and that
+ * confident-but-wrong read must not override the channel's own history:
+ *   - both confident and they AGREE   -> use that script
+ *   - both confident and they DISAGREE -> null (see below)
+ *   - only one is confident            -> use it
+ *   - neither is confident             -> null
+ * A disagreement is treated exactly like "unknown", not like "trust the
+ * query": when a user's own typed query and their own channel point at
+ * two different scripts, this module genuinely cannot tell which
+ * audience they mean, and per this feature's own rule, uncertainty must
+ * never cost the user their results — so no language filter applies.
  * Exported for the throwaway demo script.
  */
 export function inferExpectedScript(
   query: string,
   referenceTitles: string[]
-): { script: string | null; source: "query" | "channel" | "unknown" } {
+): { script: string | null; source: "query" | "channel" | "agreement" | "conflict" | "unknown" } {
   const fromQuery = dominantScript(query);
-  if (fromQuery) return { script: fromQuery, source: "query" };
+  const fromChannel = referenceTitles.length > 0 ? dominantScript(referenceTitles.join(" • ")) : null;
 
-  if (referenceTitles.length > 0) {
-    const fromChannel = dominantScript(referenceTitles.join(" • "));
-    if (fromChannel) return { script: fromChannel, source: "channel" };
+  if (fromQuery && fromChannel) {
+    return fromQuery === fromChannel
+      ? { script: fromQuery, source: "agreement" }
+      : { script: null, source: "conflict" };
   }
-
+  if (fromQuery) return { script: fromQuery, source: "query" };
+  if (fromChannel) return { script: fromChannel, source: "channel" };
   return { script: null, source: "unknown" };
 }
 
@@ -235,12 +362,15 @@ export function inferExpectedScript(
  * True if this candidate's language clearly does not match
  * `expectedScript` (itself already inferred from the user, never from a
  * fixed default). Two signals, in priority order:
- *   1. An explicit language self-label in the title/description (see
- *      LANGUAGE_LABEL_SCRIPT) — takes priority because it's a
- *      deliberate statement of the content's language even when the
- *      title text itself happens to be transliterated into a different
- *      script (the "Bangladesh space documentary bangla" case: the
- *      title is plain Latin letters, but it names Bengali).
+ *   1. An explicit, contextually-genuine language self-label in the
+ *      title/description (see findLanguageLabel) — takes priority
+ *      because it's a deliberate statement of the content's language
+ *      even when the title text itself happens to be transliterated
+ *      into a different script (the "Bangladesh space documentary
+ *      bangla" case: the title is plain Latin letters, but it names
+ *      Bengali). Narrow on purpose — see findLanguageLabel's own
+ *      comment for why a topical mention ("Japanese Space Program")
+ *      must NOT trigger this.
  *   2. Failing that, the dominant script of the title+description text
  *      itself.
  * If `expectedScript` is null, or neither signal is conclusive, this
@@ -250,18 +380,18 @@ export function inferExpectedScript(
 export function candidateLanguageMismatch(
   expectedScript: string | null,
   title: string,
-  description: string
+  description: string,
+  /** The user's own niche query. Any language named in it is a topic for
+   * this user, so it can never mark a result as wrong-language. */
+  query = ""
 ): boolean {
   if (!expectedScript) return false;
 
-  const combined = `${title} ${description}`;
-  const words = tokenizeText(combined);
-  for (const w of words) {
-    const labelScript = LANGUAGE_LABEL_SCRIPT[w];
-    if (labelScript) return labelScript !== expectedScript;
-  }
+  const topicWords = new Set(tokenizeQuery(query));
+  const labelScript = findLanguageLabel(title, description, topicWords);
+  if (labelScript) return labelScript !== expectedScript;
 
-  const candidateScript = dominantScript(combined);
+  const candidateScript = dominantScript(`${title} ${description}`);
   if (!candidateScript) return false; // inconclusive — fail open
   return candidateScript !== expectedScript;
 }
@@ -385,7 +515,8 @@ function filterCandidate(
 ): FilterReason | null {
   if (v.publishedAt < cutoff) return "age";
   if (v.views < MIN_VIEWS) return "views";
-  if (candidateLanguageMismatch(expectedScript, v.title, v.description)) return "language";
+  if (candidateLanguageMismatch(expectedScript, v.title, v.description, query))
+    return "language";
   if (!checkRelevance(query, v.title, v.description, v.tags).relevant) return "relevance";
   return null;
 }
