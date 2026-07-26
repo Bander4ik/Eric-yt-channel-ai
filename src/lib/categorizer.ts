@@ -157,6 +157,9 @@ export async function categorizeChannelVideos(
     const response = await client.messages.create({
       model: CATEGORIZER_MODEL,
       max_tokens: 4000,
+      // Sonnet 5 defaults to extended thinking, which shares this max_tokens budget —
+      // disabled here so the model spends it on the JSON response instead.
+      thinking: { type: "disabled" },
       messages: [{ role: "user", content: userPrompt }],
     });
     raw = response.content

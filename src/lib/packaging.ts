@@ -674,6 +674,9 @@ export async function packagingFormulaSummary(
     const response = await client.messages.create({
       model: ANALYZER_MODEL,
       max_tokens: 800,
+      // Thinking is on by default on Sonnet 5 and would compete with this tight
+      // 800-token budget for the actual report text, so it's turned off.
+      thinking: { type: "disabled" },
       messages: [
         {
           role: "user",

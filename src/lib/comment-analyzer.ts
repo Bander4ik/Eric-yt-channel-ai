@@ -236,6 +236,9 @@ export async function analyzeVideoComments(
     const response = await client.messages.create({
       model: ANALYZER_MODEL,
       max_tokens: 3000,
+      // Disable Sonnet 5's default thinking so it doesn't eat into this
+      // response's max_tokens budget and starve the actual analysis output.
+      thinking: { type: "disabled" },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userPrompt }],
     });

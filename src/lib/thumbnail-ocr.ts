@@ -66,6 +66,9 @@ export async function ocrThumbnail(
     const response = await client.messages.create({
       model: OCR_MODEL,
       max_tokens: 300,
+      // Sonnet 5 defaults to adaptive thinking, which would consume this tiny
+      // 300-token budget before any OCR text comes out — keep it disabled.
+      thinking: { type: "disabled" },
       messages: [
         {
           role: "user",

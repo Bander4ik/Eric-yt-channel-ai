@@ -107,6 +107,9 @@ export async function POST(req: Request) {
     const response = await client.messages.create({
       model: ANALYZER_MODEL,
       max_tokens: 1000,
+      // Sonnet 5 thinks by default and thinking eats into max_tokens, so disable it
+      // to keep this small budget available for the JSON output.
+      thinking: { type: "disabled" },
       messages: [
         {
           role: "user",
