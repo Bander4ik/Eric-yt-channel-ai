@@ -168,9 +168,18 @@ export function selectThumbnailWindow(
   channelId: string,
   requestedMonths: number | null
 ): ThumbnailWindowSelection {
-  const startIdx = STYLE_WINDOW_OPTIONS.findIndex(
-    (o) => o.months === requestedMonths
-  );
+  // Snap to the narrowest offered window that is still at least as wide as
+  // what was asked for, rather than requiring an exact match. An unmatched
+  // value used to fall back to the whole list, which starts at 6 months --
+  // so asking for a very wide window got you the narrowest one, silently.
+  // The UI only ever sends a listed value, but the API takes anything, and
+  // being quietly stricter than requested is the worst way to be wrong here.
+  const startIdx =
+    requestedMonths === null
+      ? STYLE_WINDOW_OPTIONS.findIndex((o) => o.months === null)
+      : STYLE_WINDOW_OPTIONS.findIndex(
+          (o) => o.months === null || o.months >= requestedMonths
+        );
   const sequence =
     startIdx >= 0 ? STYLE_WINDOW_OPTIONS.slice(startIdx) : STYLE_WINDOW_OPTIONS;
 
