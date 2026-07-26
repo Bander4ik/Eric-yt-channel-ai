@@ -13,7 +13,7 @@ import {
  * collection route and the per-id route need this mapping.
  *
  * The raw API key never appears in this shape — only a mask, in the same
- * format the Integrations page already uses for its keys.
+ * format the Settings page already uses for its keys.
  */
 
 export type ImageProviderView = {

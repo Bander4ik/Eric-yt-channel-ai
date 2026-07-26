@@ -8,7 +8,7 @@ export const runtime = "nodejs";
  * GET /api/integrations/apify/usage
  *
  * Returns the Apify monthly credit/usage snapshot used by the
- * Integrations card progress bar. Falls back to `configured: false`
+ * Settings card progress bar. Falls back to `configured: false`
  * if there's no API key on file, or `usage: null` if Apify replied
  * but the response shape was unexpected — UI shows "Connected" in
  * that case without a meaningless bar.

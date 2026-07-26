@@ -180,10 +180,10 @@ export function PackagingTab() {
             No active channel selected. Connect a channel and sync it to
             populate packaging analysis.
           </div>
-          <Link href="/integrations">
+          <Link href="/settings">
             <Button size="sm" className="gap-2">
               <Plug className="h-4 w-4" />
-              Go to Integrations
+              Go to Settings
             </Button>
           </Link>
         </CardContent>
@@ -284,7 +284,7 @@ export function PackagingTab() {
                 </p>
               ) : (
                 <div className="py-4 text-center text-xs text-muted-foreground">
-                  Add your Claude key in Integrations to generate the
+                  Add your Claude key in Settings to generate the
                   channel&rsquo;s winning-formula summary.
                 </div>
               )}

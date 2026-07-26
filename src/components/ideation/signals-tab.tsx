@@ -152,6 +152,18 @@ function isProvenHit(publishedAt: number | null): boolean {
 // from there, so kept in sync here as a plain literal.
 const MAX_WATCH_NICHES = 6;
 
+// Mirrors the filter chain description in src/lib/niche-watch.ts's
+// module doc-comment — not exported from there (that module is
+// server-only), so kept in sync here as a plain literal, same idiom as
+// MAX_WATCH_NICHES above. THIS IS A SECOND COPY: if the filter chain in
+// niche-watch.ts changes (thresholds, what gets checked, wording), this
+// string needs the matching update or the UI will describe a filter
+// that no longer matches what actually runs. Shown to the user so a
+// short/empty result list reads as "filtered on purpose" rather than
+// "broken" — see the empty-state copy in NicheWatchSection.
+const NICHE_WATCH_FILTERS_LABEL =
+  "language matched to your niche query / channel (never assumed) · on-topic title/description match required · 50–5M subscribers · ≥1,000 views · published in the last 7 days";
+
 // Poll cadence + staleness window for the niche-watch scan job — same
 // values/idiom as SYNC_JOB_POLL_MS / SYNC_JOB_STALE_MS in
 // src/app/competitors/page.tsx (which itself mirrors the server's own
@@ -262,10 +274,10 @@ export function SignalsTab() {
           <p className="max-w-sm text-sm text-muted-foreground">
             Connect and select a channel to see data-driven signals for it.
           </p>
-          <Link href="/integrations">
+          <Link href="/settings">
             <Button size="sm" className="gap-2">
               <Plug className="h-4 w-4" />
-              Go to Integrations
+              Go to Settings
             </Button>
           </Link>
         </CardContent>
@@ -572,6 +584,12 @@ function NicheWatchSection() {
         <CardDescription className="text-[11px]">
           Each scan ≈ 100 API units per niche.
         </CardDescription>
+        <p
+          className="text-[11px] text-muted-foreground/80"
+          title="Applied automatically to every scan so results stay on-topic and in your audience's language — see src/lib/niche-watch.ts to change any of these."
+        >
+          Filters: {NICHE_WATCH_FILTERS_LABEL}
+        </p>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
         {loadError && <p className="text-xs text-destructive">{loadError}</p>}
@@ -642,9 +660,22 @@ function NicheWatchSection() {
             cadence) for videos exploding right now — add up to 6.
           </p>
         ) : topHits.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No hits yet — run a scan.
-          </p>
+          job && !job.running && job.done > 0 && job.found === 0 ? (
+            // A scan actually ran (job.done > 0) and paid the quota, but
+            // the filter chain dropped every single candidate — say so
+            // explicitly rather than showing the same "no hits yet" copy
+            // a never-scanned niche gets, so this doesn't read as broken.
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Last scan found candidates but none survived the filters
+              above (language, on-topic match, channel size, views,
+              recency). Try a broader or more common niche phrase, or
+              widen the filters in src/lib/niche-watch.ts.
+            </p>
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No hits yet — run a scan.
+            </p>
+          )
         ) : (
           <div className="space-y-1">
             {topHits.map((h) => (

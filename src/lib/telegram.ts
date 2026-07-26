@@ -9,7 +9,7 @@ import { getSetting } from "./db";
  *   2. Send /start to your new bot from your personal account.
  *   3. Visit https://api.telegram.org/bot<TOKEN>/getUpdates to find your
  *      chat_id (look for "chat":{"id":123...}).
- *   4. Paste both into the in-app Integrations → Telegram card.
+ *   4. Paste both into the in-app Settings → Telegram card.
  *
  * We store both bot token and chat ID in `settings`. They aren't sensitive
  * enough to warrant separate encryption (bot tokens are only useful when

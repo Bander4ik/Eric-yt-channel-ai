@@ -191,10 +191,10 @@ export function VideosTab() {
               No videos yet for this channel. Connect a channel and sync it
               to populate the idea pipeline.
             </div>
-            <Link href="/integrations">
+            <Link href="/settings">
               <Button size="sm" className="gap-2">
                 <Plug className="h-4 w-4" />
-                Go to Integrations
+                Go to Settings
               </Button>
             </Link>
           </CardContent>

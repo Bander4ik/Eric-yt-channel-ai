@@ -112,7 +112,7 @@ export async function POST(req: Request) {
       {
         error: `${providerLabel(
           provider
-        )} API key is not configured. Add it in Integrations.`,
+        )} API key is not configured. Add it in Settings.`,
       },
       { status: 400 }
     );

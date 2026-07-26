@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * Apify billing snapshot used by both the Integrations card and the
+ * Apify billing snapshot used by both the Settings card and the
  * transcribe button on the video page. The Free plan ships $5 of
  * usage credit per calendar month — we surface a usable-bar against
  * that. Paid plans get treated the same; we just substitute their

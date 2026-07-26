@@ -113,7 +113,7 @@ export function ChannelRevenue() {
     load();
   }, [load]);
 
-  // Not connected — render nothing (other components nudge to /integrations).
+  // Not connected — render nothing (other components nudge to /settings).
   if (data && !data.connected) return null;
 
   // No revenue access — graceful, informative card.
@@ -147,10 +147,10 @@ export function ChannelRevenue() {
               Reconnect Google with the <code className="rounded bg-muted px-1">yt-analytics-monetary.readonly</code>{" "}
               scope —{" "}
               <Link
-                href="/integrations#youtube-analytics"
+                href="/settings#youtube-analytics"
                 className="text-primary hover:underline"
               >
-                Integrations
+                Settings
               </Link>{" "}
               → Reconnect.
             </li>

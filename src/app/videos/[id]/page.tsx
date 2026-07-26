@@ -620,8 +620,8 @@ function TranscriptPanel({
                 )}
               </Button>
             ) : (
-              <Link href="/integrations" className="text-sm text-primary hover:underline">
-                Add a Deepgram key in Integrations to enable transcription
+              <Link href="/settings" className="text-sm text-primary hover:underline">
+                Add a Deepgram key in Settings to enable transcription
               </Link>
             )}
           </div>

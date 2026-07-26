@@ -53,7 +53,7 @@ export async function POST() {
   const apiKey = getIntegration("youtube")?.api_key;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "YouTube API key is not configured. Add it in Integrations." },
+      { error: "YouTube API key is not configured. Add it in Settings." },
       { status: 400 }
     );
   }
@@ -61,7 +61,7 @@ export async function POST() {
   const channels = listAllChannels();
   if (channels.length === 0) {
     return NextResponse.json({
-      error: "No channels connected — add one on /integrations first.",
+      error: "No channels connected — add one on /settings first.",
     }, { status: 400 });
   }
 

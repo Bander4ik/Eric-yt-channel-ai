@@ -130,13 +130,13 @@ export async function POST(req: Request) {
   const apiKey = getIntegration("youtube")?.api_key;
   if (!apiKey) {
     return Response.json(
-      { error: "YouTube API key is not configured. Add it in Integrations." },
+      { error: "YouTube API key is not configured. Add it in Settings." },
       { status: 400 }
     );
   }
 
   // Determine what channel to sync. Precedence:
-  //   1. explicit body.input — the "add a new channel" flow (Integrations)
+  //   1. explicit body.input — the "add a new channel" flow (Settings)
   //      passes this and DOES intend to switch the active channel to it.
   //   2. the ACTIVE channel — via its recorded per-channel input, falling
   //      back to the active channel ID itself (resolveChannel accepts a raw

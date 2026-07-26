@@ -899,7 +899,7 @@ export async function runTool(name: string, input: ToolInput): Promise<ToolResul
           return {
             ok: false,
             error:
-              "YouTube Analytics is not connected. Tell the user to go to Integrations → YouTube Analytics (Google OAuth) and click Connect.",
+              "YouTube Analytics is not connected. Tell the user to go to Settings → Google OAuth and click Connect.",
           };
         }
         const period = (typeof input.period === "string" ? input.period : "28d") as
@@ -1311,9 +1311,8 @@ export function buildSystemPrompt(
     `   • Gap Analysis — keywords that appear in competitors' TOP videos but in none of the user's own titles, sorted by aggregate views.`,
     `   • Alerts — outlier videos from tracked competitors that crossed ≥2× their own median views (i.e. something is going viral in this niche right now).`,
     `- **Alerts** (\`/alerts\`) — channel-wide notification feed (separate surface from Competitor Alerts).`,
-    `- **Integrations** (\`/integrations\`) — where the user pastes their API keys. Three groups: Core (YouTube Data API, Claude, Gemini), Optional add-ons (Deepgram, Apify), Advanced (Google OAuth for YouTube Analytics, collapsed by default). Each card has step-by-step instructions for how to obtain that key.`,
     `- **Logs** (\`/logs\`) — structured activity log (hidden in sidebar by default; user can enable in Settings).`,
-    `- **Settings** (\`/settings\`) — theme + Optional Sections toggles (Editor billing card, Logs visibility).`,
+    `- **Settings** (\`/settings\`) — everything in one page now (the old /integrations page was merged in, old links redirect here): Required to work (YouTube Data API key, an AI-provider picker for Claude/Gemini — one key field at a time, Google OAuth), Channel (bind/sync, cookies), Optional (Deepgram, Apify, image providers — collapsed by default), Usage (Claude/Apify/Deepgram spend — collapsed by default), Appearance (theme + Optional Sections toggles — collapsed by default). Each key is a single row with a Set/Replace button; setup steps collapse behind a "how to get a key" disclosure.`,
     ``,
     `**Other surfaces worth knowing:**`,
     `- **Channel Switcher** (top-right in the topbar) — when the user has connected more than one YouTube channel, they pick the active one here. Every local-DB tool you call is scoped to whichever channel is active.`,
@@ -1357,9 +1356,9 @@ export function buildSystemPrompt(
       `- When the user asks about a channel that is NOT in their connected list (a competitor, a reference channel they admire), reach for external tools: \`scrape_youtube_channel\` (Apify), \`search_youtube\`, or \`web_search\`. Don't confuse it with the active channel's local data.`
     );
   } else if (bound) {
-    lines.push(`- A channel is bound (\`${bound}\`) but hasn't been synced yet. Suggest running a sync from Integrations → YouTube Channel before any deep analysis.`);
+    lines.push(`- A channel is bound (\`${bound}\`) but hasn't been synced yet. Suggest running a sync from Settings → Channel before any deep analysis.`);
   } else {
-    lines.push(`- **No channel is bound yet.** The user needs to go to Integrations and paste a YouTube Data API key + connect their channel before most of your tools will return useful data. Mention this proactively if their question requires channel data.`);
+    lines.push(`- **No channel is bound yet.** The user needs to go to Settings and paste a YouTube Data API key + connect their channel before most of your tools will return useful data. Mention this proactively if their question requires channel data.`);
   }
 
   // -----------------------------------------------------------------
@@ -1439,8 +1438,8 @@ export function buildSystemPrompt(
     `# When a tool returns an error`,
     `Every tool is available to you, but some require keys or prior actions to work. When a tool returns an error, do NOT silently retry or invent data — explain the cause to the user in one sentence and tell them exactly how to fix it. The most common patterns:`,
     ``,
-    `- **"X API key not configured" / "no key for X"** → "I need your X key to run that. Open **Integrations** in the left sidebar, find the **X** card, paste your key, and click Save. Then ask me again." Replace X with the actual integration name (claude, deepgram, apify, youtube, google_gemini).`,
-    `- **"YouTube Analytics not connected"** → "This needs Studio-grade access via Google OAuth. Open **Integrations → Advanced → Google OAuth** and click Connect. Sign in with the Google account that owns / manages the channel."`,
+    `- **"X API key not configured" / "no key for X"** → "I need your X key to run that. Open **Settings** in the left sidebar, find the **X** row, paste your key, and click Save. Then ask me again." Replace X with the actual integration name (claude, deepgram, apify, youtube, google_gemini).`,
+    `- **"YouTube Analytics not connected"** → "This needs Studio-grade access via Google OAuth. Open **Settings → Google OAuth** and click Connect. Sign in with the Google account that owns / manages the channel."`,
     `- **"YouTube Analytics 403/401"** → permissions, not bug. "The connected Google account doesn't have the right role on this channel. The channel owner needs to add you as Owner or Manager in YouTube Studio → Settings → Permissions, OR reconnect using the owner's Google account." Do NOT keep retrying — this won't fix itself.`,
     `- **"No hook analysis on file for this video"** → "Hook Lab hasn't analysed this video yet. Open **Hook Lab** and click 'Analyze N pending' (or open the specific video and re-analyse). Then ask me again."`,
     `- **"No comment analysis cached"** → "Open the video's Comments tab and click 'Analyse with AI'. That populates the analysis I'd need here."`,

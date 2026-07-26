@@ -257,7 +257,7 @@ function ChatPageInner() {
         setIntegrations(ints);
         // Auto-enable EVERY tool group on every fresh session, regardless
         // of which API keys are set. The system prompt teaches the model
-        // how to surface "you haven't configured X — go to Integrations
+        // how to surface "you haven't configured X — go to Settings
         // → X" cleanly when a tool comes back with a key-not-found
         // error, so the worst case of pre-enabling a key-less group is
         // one polite redirect instead of a hidden capability. The best
@@ -696,7 +696,7 @@ function ChatPageInner() {
             AI model selector. Per-user preference (localStorage) — applies to
             new turns immediately so the user can pivot Claude ↔ Gemini between
             messages in the same chat. Gemini options are disabled until a
-            Gemini API key is saved in /integrations; we show "(no key)" so the
+            Gemini API key is saved in /settings; we show "(no key)" so the
             disabled state isn't a mystery.
           */}
           <select
@@ -942,7 +942,7 @@ function ChatPageInner() {
             />
             {!hasKey && (
               <p className="mt-2 text-center text-xs text-muted-foreground">
-                <Link href="/integrations" className="underline hover:text-foreground">
+                <Link href="/settings" className="underline hover:text-foreground">
                   {t.banner.connectCta}
                 </Link>
               </p>
@@ -964,7 +964,7 @@ function EmptyState({ hasKey }: { hasKey: boolean | null }) {
       {hasKey === false ? (
         <>
           <div className="text-sm text-muted-foreground">{t.chat.missingKey}</div>
-          <Link href="/integrations">
+          <Link href="/settings">
             <Button size="sm">{t.banner.connectCta}</Button>
           </Link>
         </>

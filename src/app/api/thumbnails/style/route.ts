@@ -3,18 +3,20 @@ import {
   countVisibleCompetitors,
   getActiveChannelId,
   getThumbnailStyleProfile,
-  listCompetitorThumbnailWinners,
-  listOwnThumbnailWinners,
+  getThumbnailStyleWindowSetting,
   saveThumbnailStyleProfile,
+  setThumbnailStyleWindowMonths,
 } from "@/lib/db";
 import {
   analyseThumbnailStyle,
   resolveAnalysisProvider,
-  collectReferenceThumbnails,
-  MAX_COMPETITOR_REFS,
-  MAX_OWN_REFS,
+  collectReferenceThumbnailsForWindow,
+  selectThumbnailWindow,
+  DEFAULT_STYLE_WINDOW_MONTHS,
   MIN_WINNERS,
   PROFILE_MAX_AGE_MS,
+  STYLE_WINDOW_OPTIONS,
+  STYLE_WINDOW_STARVATION_FLOOR,
   type ThumbnailStyleProfile,
 } from "@/lib/thumbnail-style";
 import {
@@ -49,15 +51,41 @@ function resolveChannelId(req: Request): string | null {
   return url.searchParams.get("channelId") || getActiveChannelId();
 }
 
+/**
+ * The window to preview/run with: an explicit query override (the tab
+ * asking "what would N months look like" before the user commits to it),
+ * else the channel's saved preference, else the default. `undefined`
+ * from the setting means "nothing saved yet" and is distinct from the
+ * saved value being `null` ("all time" was explicitly chosen) — see
+ * getThumbnailStyleWindowSetting in db.ts.
+ */
+function resolveRequestedWindowMonths(
+  channelId: string,
+  override: string | null
+): number | null {
+  if (override !== null) {
+    if (override === "all") return null;
+    const n = Number(override);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const stored = getThumbnailStyleWindowSetting(channelId);
+  return stored === undefined ? DEFAULT_STYLE_WINDOW_MONTHS : stored;
+}
+
 export async function GET(req: Request) {
   const channelId = resolveChannelId(req);
   if (!channelId) {
     return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
   }
 
+  const url = new URL(req.url);
+  const requestedMonths = resolveRequestedWindowMonths(
+    channelId,
+    url.searchParams.get("windowMonths")
+  );
+
   const row = getThumbnailStyleProfile(channelId);
-  const own = listOwnThumbnailWinners(channelId, MAX_OWN_REFS);
-  const competitor = listCompetitorThumbnailWinners(channelId, MAX_COMPETITOR_REFS);
+  const selection = selectThumbnailWindow(channelId, requestedMonths);
 
   let profile: ThumbnailStyleProfile | null = null;
   if (row) {
@@ -77,16 +105,29 @@ export async function GET(req: Request) {
     lowConfidence: row ? row.low_confidence === 1 : null,
     ownSampleSize: row?.own_sample_size ?? null,
     competitorSampleSize: row?.competitor_sample_size ?? null,
-    // Live counts of what a fresh analysis would look at right now.
+    // Live counts of what a fresh analysis would look at right now, at
+    // the requested (or saved/default) window.
     available: {
-      own: own.length,
-      competitor: competitor.length,
+      own: selection.own.length,
+      competitor: selection.competitor.length,
       competitorsTracked: countVisibleCompetitors(channelId),
       minWinners: MIN_WINNERS,
     },
     winners: {
-      own: own.map(publicWinner),
-      competitor: competitor.map(publicWinner),
+      own: selection.own.map(publicWinner),
+      competitor: selection.competitor.map(publicWinner),
+    },
+    window: {
+      // What a run started right now would use, after auto-widening.
+      months: selection.windowMonths,
+      requestedMonths: selection.requestedWindowMonths,
+      widened: selection.widened,
+      floor: STYLE_WINDOW_STARVATION_FLOOR,
+      options: STYLE_WINDOW_OPTIONS,
+      // What the CACHED profile above was actually built from — may
+      // differ from the live selection if the dropdown has since changed.
+      savedMonths: row?.window_months ?? null,
+      savedWidened: row ? row.window_widened === 1 : false,
     },
     stale: ageMs !== null && ageMs > PROFILE_MAX_AGE_MS,
     job: readJob(jobKey(THUMBNAIL_STYLE_JOB, channelId)),
@@ -117,6 +158,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
   }
 
+  // The window is an explicit body field so a fresh click always says
+  // what it means, rather than silently trusting whatever was last
+  // saved. Sending it also persists it as the channel's new preference.
+  let body: { windowMonths?: number | null } = {};
+  try {
+    body = (await req.json()) as { windowMonths?: number | null };
+  } catch {
+    body = {};
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "windowMonths")) {
+    setThumbnailStyleWindowMonths(channelId, body.windowMonths ?? null);
+  }
+  const stored = getThumbnailStyleWindowSetting(channelId);
+  const requestedMonths = stored === undefined ? DEFAULT_STYLE_WINDOW_MONTHS : stored;
+
   // Either text model can read thumbnails. Dry run calls neither, so a
   // missing key must not block the plumbing from being exercised.
   const analyser =
@@ -128,7 +184,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          "No text model is configured. Add a Claude or a Gemini API key in Integrations — Gemini has a free tier.",
+          "No text model is configured. Add a Claude or a Gemini API key in Settings — Gemini has a free tier.",
       },
       { status: 400 }
     );
@@ -142,35 +198,53 @@ export async function POST(req: Request) {
     );
   }
 
-  const ownCount = listOwnThumbnailWinners(channelId, MAX_OWN_REFS).length;
-  const compCount = listCompetitorThumbnailWinners(
-    channelId,
-    MAX_COMPETITOR_REFS
-  ).length;
-  if (ownCount + compCount === 0) {
+  const selection = selectThumbnailWindow(channelId, requestedMonths);
+  const ownCount = selection.own.length;
+  const compCount = selection.competitor.length;
+  const total = ownCount + compCount;
+
+  // Starvation guard: a handful of images is not a pattern, it's a
+  // guess. Widening already happened inside selectThumbnailWindow -- if
+  // the pool is still this thin even at "all time", refuse rather than
+  // build a profile nobody should trust, and say exactly how many were
+  // found so the user knows this is a data problem, not a bug.
+  if (total < STYLE_WINDOW_STARVATION_FLOOR) {
+    const windowLabel =
+      selection.windowMonths === null
+        ? "the channel's full history"
+        : `the last ${selection.windowMonths} months`;
     return NextResponse.json(
       {
         error:
-          "No thumbnails to analyse yet. Sync this channel's videos, and add competitors on the Competitors tab.",
+          total === 0
+            ? "No thumbnails to analyse yet. Sync this channel's videos, and add competitors on the Competitors tab."
+            : `Only ${total} thumbnail${total === 1 ? "" : "s"} found in ${windowLabel} — too few to learn a reliable style from. Sync more videos, add competitors, or widen the window before running this analysis.`,
       },
       { status: 400 }
     );
   }
 
-  startJob(key, ownCount + compCount, "collecting reference thumbnails");
+  startJob(key, total, "collecting reference thumbnails");
   log.info("thumbnails", "Style analysis started", {
     channelId,
     own: ownCount,
     competitor: compCount,
+    windowMonths: selection.windowMonths,
+    requestedWindowMonths: selection.requestedWindowMonths,
+    widened: selection.widened,
   });
 
   // Fire-and-forget: the analysis finishes on the server whether or not
   // the tab stays open.
   void (async () => {
     try {
-      const refs = await collectReferenceThumbnails(channelId, (done, total) => {
-        progressJob(key, { done, total, stage: "collecting reference thumbnails" });
-      });
+      const refs = await collectReferenceThumbnailsForWindow(
+        channelId,
+        { own: selection.own, competitor: selection.competitor },
+        (done, jobTotal) => {
+          progressJob(key, { done, total: jobTotal, stage: "collecting reference thumbnails" });
+        }
+      );
 
       progressJob(key, {
         stage: `analysing ${refs.own.length + refs.competitor.length} thumbnails`,
@@ -183,12 +257,10 @@ export async function POST(req: Request) {
         isDryRun() && refs.own.length + refs.competitor.length === 0;
 
       const ownIds = dryWithoutImages
-        ? listOwnThumbnailWinners(channelId, MAX_OWN_REFS).map((w) => w.videoId)
+        ? selection.own.map((w) => w.videoId)
         : refs.own.map((r) => r.videoId);
       const competitorIds = dryWithoutImages
-        ? listCompetitorThumbnailWinners(channelId, MAX_COMPETITOR_REFS).map(
-            (w) => w.videoId
-          )
+        ? selection.competitor.map((w) => w.videoId)
         : refs.competitor.map((r) => r.videoId);
 
       const { profile, model } = dryWithoutImages
@@ -211,6 +283,8 @@ export async function POST(req: Request) {
         competitorVideoIds: competitorIds,
         lowConfidence,
         model,
+        windowMonths: selection.windowMonths,
+        widened: selection.widened,
       });
 
       finishJob(key, {
@@ -223,6 +297,8 @@ export async function POST(req: Request) {
         competitor: competitorIds.length,
         lowConfidence,
         model,
+        windowMonths: selection.windowMonths,
+        widened: selection.widened,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -233,7 +309,14 @@ export async function POST(req: Request) {
     }
   })();
 
-  return NextResponse.json({ ok: true, started: true, total: ownCount + compCount });
+  return NextResponse.json({
+    ok: true,
+    started: true,
+    total,
+    window: {
+      months: selection.windowMonths,
+      requestedMonths: selection.requestedWindowMonths,
+      widened: selection.widened,
+    },
+  });
 }
-
-

@@ -97,7 +97,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
   // previous so the page doesn't sprawl.
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   // Whole channels list collapsed by default. Most users come to
-  // /integrations to add ONE channel or change ONE setting; the full
+  // /settings to add ONE channel or change ONE setting; the full
   // 20+ row list dominating the page is noise. Click the header to
   // expand.
   const [channelsListExpanded, setChannelsListExpanded] = useState(false);
@@ -164,7 +164,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
   };
 
   const connectGoogle = (id: string) => {
-    // Redirect-style flow — Google sends the user back to /integrations
+    // Redirect-style flow — Google sends the user back to /settings
     // with ?oauth=connected after the handshake completes.
     window.location.href = `/api/youtube/oauth/start?channelId=${encodeURIComponent(id)}`;
   };
@@ -681,7 +681,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
  * per channel by design, so verification isn't realistic), refresh
  * tokens silently expire after 7 days. Once that happens analytics
  * starts 403'ing and the user has no idea why until they scroll down to
- * the bottom of /integrations and see the "Active Google session"
+ * the bottom of /settings and see the "Active Google session"
  * panel.
  *
  * The chip surfaces that info per row so the user can spot which

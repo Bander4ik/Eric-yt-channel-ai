@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 const DEFAULT_CREDIT_USD = 200;
 
 /**
- * Usage stats for the Integrations page.
+ * Usage stats for the Settings page.
  *   total — spent so far (authoritative, from our ledger)
  *   limit — credit the user says they have (editable; default $200)
  *   remaining = limit − total

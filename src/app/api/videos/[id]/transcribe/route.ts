@@ -40,7 +40,7 @@ export async function POST(
     const apiKey = getIntegration("deepgram")?.api_key;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Deepgram API key is not configured. Add it in Integrations." },
+        { error: "Deepgram API key is not configured. Add it in Settings." },
         { status: 400 }
       );
     }

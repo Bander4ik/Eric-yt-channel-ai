@@ -13,7 +13,7 @@ export const runtime = "nodejs";
  *   ?code=...&state=...     on success, or
  *   ?error=access_denied&state=...  on user cancel.
  *
- * We always redirect back to /integrations with a status query param so the
+ * We always redirect back to /settings with a status query param so the
  * UI can show a toast / banner.
  */
 /**
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const origin = resolveOrigin(req);
   const redirectBack = (params: Record<string, string>): NextResponse => {
-    const to = new URL("/integrations", origin);
+    const to = new URL("/settings", origin);
     for (const [k, v] of Object.entries(params)) {
       to.searchParams.set(k, v);
     }

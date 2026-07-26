@@ -903,7 +903,7 @@ export async function transcribeYouTubeVideo(
         `  Tier 2 (Innertube → Deepgram URL): ${tier2Error}\n` +
         `  Tier 3 (cobalt.tools): no stream URL from any mirror\n\n` +
         `If yt-dlp keeps failing, the most reliable fix is to paste a YouTube ` +
-        `cookies.txt under Integrations → YouTube cookies. Or use the ` +
+        `cookies.txt under Settings → YouTube cookies. Or use the ` +
         `file-upload / URL-input options on the video Transcript tab.`
     );
   } catch (e) {
@@ -915,7 +915,7 @@ export async function transcribeYouTubeVideo(
         `  Tier 2 (Innertube → Deepgram URL): ${tier2Error}\n` +
         `  Tier 3 (cobalt.tools): ${tier3Msg}\n\n` +
         `If yt-dlp keeps failing, the most reliable fix is to paste a YouTube ` +
-        `cookies.txt under Integrations → YouTube cookies. Or use the ` +
+        `cookies.txt under Settings → YouTube cookies. Or use the ` +
         `file-upload / URL-input options on the video Transcript tab.`
     );
   }

@@ -82,6 +82,8 @@ type Job = {
   resultId?: number | null;
 };
 
+type WindowOption = { months: number | null; label: string };
+
 type StyleResponse = {
   channelId: string;
   profile: StyleProfile | null;
@@ -96,6 +98,17 @@ type StyleResponse = {
     minWinners: number;
   };
   winners: { own: Winner[]; competitor: Winner[] };
+  window: {
+    /** What a run started right now would actually use. */
+    months: number | null;
+    requestedMonths: number | null;
+    widened: boolean;
+    floor: number;
+    options: WindowOption[];
+    /** What the cached profile below was built from. */
+    savedMonths: number | null;
+    savedWidened: boolean;
+  };
   stale: boolean;
   job: Job | null;
 };
@@ -237,6 +250,13 @@ export function ThumbnailsTab() {
   // idea shortcuts rather than offering cards from the wrong channel.
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [style, setStyle] = useState<StyleResponse | null>(null);
+  // The style-analysis window (months of history to draw from). Starts
+  // null ("use whatever the server says is saved/default") until the
+  // first load tells us what that is, so the dropdown never flashes a
+  // wrong value before the real one arrives.
+  const [windowMonths, setWindowMonths] = useState<number | null | undefined>(
+    undefined
+  );
   const [provider, setProvider] = useState<ProviderView | null>(null);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
@@ -267,18 +287,37 @@ export function ThumbnailsTab() {
 
   /* ---------------------------------------------------------------- */
 
-  const loadStyle = useCallback(async (id: string | null) => {
-    const qs = id ? `?channelId=${encodeURIComponent(id)}` : "";
-    const r = await fetch(`/api/thumbnails/style${qs}`, { cache: "no-store" });
-    const j = (await r.json()) as StyleResponse & { error?: string };
-    if (!r.ok) {
-      setError(j.error ?? "Could not load the style profile.");
-      return null;
-    }
-    setStyle(j);
-    setError(null);
-    return j;
-  }, []);
+  const loadStyle = useCallback(
+    async (id: string | null, windowOverride?: number | null) => {
+      const params = new URLSearchParams();
+      if (id) params.set("channelId", id);
+      // Passing the override previews a hypothetical window (e.g. while
+      // the user is scrubbing the dropdown) without saving it — only an
+      // actual "Analyse" click persists a new choice.
+      if (windowOverride !== undefined) {
+        params.set(
+          "windowMonths",
+          windowOverride === null ? "all" : String(windowOverride)
+        );
+      }
+      const qs = params.toString();
+      const r = await fetch(`/api/thumbnails/style${qs ? `?${qs}` : ""}`, {
+        cache: "no-store",
+      });
+      const j = (await r.json()) as StyleResponse & { error?: string };
+      if (!r.ok) {
+        setError(j.error ?? "Could not load the style profile.");
+        return null;
+      }
+      setStyle(j);
+      setError(null);
+      // Keep the dropdown in sync with whatever the server resolved to
+      // (saved preference, default, or the override we just sent).
+      setWindowMonths(j.window.months);
+      return j;
+    },
+    []
+  );
 
   const loadRun = useCallback(async (id: string | null) => {
     const qs = id ? `?channelId=${encodeURIComponent(id)}` : "";
@@ -367,14 +406,21 @@ export function ThumbnailsTab() {
       const r = await fetch("/api/thumbnails/style", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelId }),
+        body: JSON.stringify({ channelId, windowMonths }),
       });
       const j = (await r.json()) as { error?: string };
       if (!r.ok) setError(j.error ?? "Could not start the analysis.");
-      await loadStyle(channelId);
+      await loadStyle(channelId, windowMonths);
     } finally {
       setBusy(false);
     }
+  };
+
+  // Live preview only — does not save the choice. The channel's saved
+  // window (or the default) is only overwritten when "Analyse" runs.
+  const previewWindow = (months: number | null) => {
+    setWindowMonths(months);
+    void loadStyle(channelId, months);
   };
 
   // Own videos back the Remix picker. Loaded lazily and only for the
@@ -524,6 +570,8 @@ export function ThumbnailsTab() {
         style={style}
         onAnalyse={startAnalysis}
         busy={busy}
+        windowMonths={windowMonths}
+        onWindowChange={previewWindow}
       />
 
       <BrandAssetsPanel channelId={channelId} />
@@ -1113,8 +1161,8 @@ function ProviderBanner({ provider }: { provider: ProviderView | null }) {
           <Plug className="mt-0.5 h-4 w-4 text-amber-600" />
           <span>
             No image provider is active.{" "}
-            <Link href="/integrations" className="underline">
-              Add one in Integrations
+            <Link href="/settings" className="underline">
+              Add one in Settings
             </Link>{" "}
             — Gemini, OpenAI or fal, with your own key.
           </span>
@@ -1128,7 +1176,7 @@ function ProviderBanner({ provider }: { provider: ProviderView | null }) {
       Generating with <b className="text-foreground">{provider.providerLabel}</b>
       <span className="rounded bg-muted px-1.5 py-0.5">{provider.modelLabel}</span>
       <span className="font-mono">{provider.masked}</span>
-      <Link href="/integrations" className="underline">
+      <Link href="/settings" className="underline">
         change
       </Link>
     </div>
@@ -1140,18 +1188,28 @@ function ProviderBanner({ provider }: { provider: ProviderView | null }) {
  * behind a toggle: what the generation is based on, how strong the
  * evidence is, and how to make it stronger.
  */
+/** "24" -> "24 months", null -> "its full history" — used inline in prose. */
+function windowPhrase(months: number | null): string {
+  return months === null ? "its full history" : `the last ${months} months`;
+}
+
 function BasisPanel({
   style,
   onAnalyse,
   busy,
+  windowMonths,
+  onWindowChange,
 }: {
   style: StyleResponse | null;
   onAnalyse: () => void;
   busy: boolean;
+  windowMonths: number | null | undefined;
+  onWindowChange: (months: number | null) => void;
 }) {
   if (!style) return null;
-  const { available, winners, profile, job } = style;
+  const { available, winners, profile, job, window: win } = style;
   const thin = available.own < available.minWinners;
+  const starved = available.own + available.competitor < win.floor;
 
   return (
     <Card>
@@ -1161,27 +1219,57 @@ function BasisPanel({
             <Info className="h-4 w-4" />
             What this is based on
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onAnalyse}
-            disabled={busy || !!job?.running}
-            className="gap-2"
-          >
-            {job?.running ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            {profile ? "Re-analyse style" : "Analyse what works here"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Look back
+              <select
+                value={
+                  windowMonths === undefined
+                    ? ""
+                    : windowMonths === null
+                      ? "all"
+                      : String(windowMonths)
+                }
+                onChange={(e) =>
+                  onWindowChange(
+                    e.target.value === "all" ? null : Number(e.target.value)
+                  )
+                }
+                disabled={busy || !!job?.running}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+              >
+                {win.options.map((o) => (
+                  <option
+                    key={o.label}
+                    value={o.months === null ? "all" : String(o.months)}
+                  >
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onAnalyse}
+              disabled={busy || !!job?.running}
+              className="gap-2"
+            >
+              {job?.running ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              {profile ? "Re-analyse style" : "Analyse what works here"}
+            </Button>
+          </div>
         </div>
 
         <p className="text-sm text-muted-foreground">
           Generation uses <b className="text-foreground">your channel&apos;s</b>{" "}
           thumbnails and <b className="text-foreground">your competitors&apos;</b>{" "}
-          — only videos at least 14 days old, ranked by views against their own
-          channel&apos;s median.{" "}
+          — only videos at least 14 days old, published within your look-back
+          window, ranked by views against their own channel&apos;s median.{" "}
           {available.competitorsTracked === 0 ? (
             <>
               You have no competitors tracked yet.{" "}
@@ -1202,6 +1290,17 @@ function BasisPanel({
           )}
         </p>
 
+        {win.widened && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            Your chosen window (
+            {win.requestedMonths === null
+              ? "all time"
+              : `last ${win.requestedMonths} months`}
+            ) had too few thumbnails, so this preview was widened to{" "}
+            {windowPhrase(win.months)} automatically.
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-4 text-xs">
           <Stat label="your winners" value={available.own} />
           <Stat label="competitor winners" value={available.competitor} />
@@ -1213,7 +1312,34 @@ function BasisPanel({
           )}
         </div>
 
-        {thin && (
+        {profile && (
+          <p className="text-xs text-muted-foreground">
+            This profile was built from{" "}
+            <b className="text-foreground">{style.ownSampleSize ?? 0}</b> of
+            your thumbnails and{" "}
+            <b className="text-foreground">{style.competitorSampleSize ?? 0}</b>{" "}
+            competitor thumbnails, published in {windowPhrase(win.savedMonths)}
+            {win.savedWidened
+              ? " (widened automatically — the requested window had too few)"
+              : ""}
+            .
+          </p>
+        )}
+
+        {starved && (
+          <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Only {available.own + available.competitor} thumbnail
+              {available.own + available.competitor === 1 ? "" : "s"} found in{" "}
+              {windowPhrase(win.months)} — below the {win.floor} needed to
+              learn a reliable style. Running the analysis now will refuse
+              rather than guess from this few.
+            </span>
+          </div>
+        )}
+
+        {!starved && thin && (
           <div className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>

@@ -189,7 +189,7 @@ function validateOutput(parsed: unknown): AnalyzerOutput {
  *     in the Hook Lab header to override.
  *
  * Returns `null` if neither provider has a key — caller surfaces a
- * clear "configure a key in Integrations" message.
+ * clear "configure a key in Settings" message.
  */
 function resolveProvider(
   explicit: ProviderChoice | undefined
@@ -246,7 +246,7 @@ export async function analyzeVideoHook(
     return {
       ok: false,
       reason:
-        "No AI provider configured. Add a Claude or Gemini API key in Integrations.",
+        "No AI provider configured. Add a Claude or Gemini API key in Settings.",
     };
   }
 

@@ -4,7 +4,7 @@ import { claudeUsageStats, clearClaudeUsage } from "@/lib/db";
 export const runtime = "nodejs";
 
 /**
- * Claude-spend history for the Integrations page widget. Returns recent
+ * Claude-spend history for the Settings page widget. Returns recent
  * turns + aggregate totals so the UI can render a bar + an expandable
  * per-turn list.
  */

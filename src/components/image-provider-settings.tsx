@@ -17,7 +17,7 @@ import {
 } from "@/lib/image-provider-types";
 
 /**
- * Image-generation providers on the Integrations page.
+ * Image-generation providers on the Settings page.
  *
  * Deliberately a list rather than the fixed named slots the other
  * integrations use: the user can hold several keys — two Gemini

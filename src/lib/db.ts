@@ -5510,6 +5510,33 @@ try {
   /* noop -- table may not exist yet on a brand-new DB */
 }
 
+// The style-window feature (bounding how OLD a reference thumbnail can
+// be) arrived after profiles were already being cached, so the columns
+// that record what window a saved profile used are a migration rather
+// than part of the original CREATE TABLE above. `window_months` is NULL
+// for both "all time" and for profiles computed before this migration --
+// the UI treats an unknown window the same as "all time" since that was
+// the only behaviour that existed before.
+try {
+  const profileCols = (
+    db.prepare(`PRAGMA table_info(thumbnail_style_profiles)`).all() as {
+      name: string;
+    }[]
+  ).map((c) => c.name);
+  if (!profileCols.includes("window_months")) {
+    db.exec(
+      `ALTER TABLE thumbnail_style_profiles ADD COLUMN window_months INTEGER`
+    );
+  }
+  if (!profileCols.includes("window_widened")) {
+    db.exec(
+      `ALTER TABLE thumbnail_style_profiles ADD COLUMN window_widened INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+} catch {
+  /* noop -- table may not exist yet on a brand-new DB */
+}
+
 /* ------------------------------------------------------------------ *
  * Image providers
  * ------------------------------------------------------------------ */
@@ -5666,6 +5693,49 @@ function thumbMaturityCutoff(): number {
 }
 
 /**
+ * The lower bound in unix seconds for the style-analysis window, or
+ * `null` for "no lower bound" (all time). This is a MAXIMUM age on top
+ * of the existing MINIMUM-age maturity cutoff above -- the two bound the
+ * window from opposite ends: too-new videos haven't proven themselves
+ * yet, too-old ones may belong to a look the channel has since dropped.
+ */
+function thumbWindowFloor(windowMonths: number | null): number | null {
+  if (windowMonths === null) return null;
+  return Math.floor(Date.now() / 1000) - windowMonths * 30 * 86400;
+}
+
+/**
+ * Per-channel setting for how far back the thumbnail style analysis
+ * looks. Stored the same way `editor.costPerVideoUsd.<channelId>` is
+ * (see `editorBillingByMonth`) -- a plain settings-table row keyed by
+ * channel, no dedicated schema needed.
+ *
+ * Returns `undefined` when nothing has been saved yet (caller should
+ * apply its own default), `null` when the user explicitly picked "all
+ * time", or the number of months otherwise. `null` and `undefined` are
+ * kept distinct because "all time" is a real, deliberate choice.
+ */
+export function getThumbnailStyleWindowSetting(
+  channelId: string
+): number | null | undefined {
+  const raw = getSetting(`thumbnails.styleWindowMonths.${channelId}`);
+  if (raw === null) return undefined;
+  if (raw === "all") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+export function setThumbnailStyleWindowMonths(
+  channelId: string,
+  months: number | null
+): void {
+  setSetting(
+    `thumbnails.styleWindowMonths.${channelId}`,
+    months === null ? "all" : String(months)
+  );
+}
+
+/**
  * A few of the channel's own recent titles, used as language evidence.
  *
  * The prompt builder has to write a headline in the channel's language,
@@ -5686,11 +5756,22 @@ export function listRecentChannelTitles(channelId: string, limit = 6): string[] 
   return rows.map((r) => r.title);
 }
 
-/** Top-performing mature thumbnails from the channel itself. */
+/**
+ * Top-performing mature thumbnails from the channel itself.
+ *
+ * `windowMonths` bounds how OLD a thumbnail can be and still count
+ * (`null` = no bound, the historical behaviour, kept as the default for
+ * callers that predate the style-window feature, e.g. the chat tool's
+ * quick counts). This is what stops the style analysis from averaging
+ * a channel's old look together with a rebrand -- a three-year-old
+ * thumbnail no longer gets an equal vote against last month's.
+ */
 export function listOwnThumbnailWinners(
   channelId: string,
-  limit = 12
+  limit = 12,
+  windowMonths: number | null = null
 ): ThumbnailWinner[] {
+  const windowFloor = thumbWindowFloor(windowMonths);
   const rows = db
     .prepare(
       `SELECT id, title, thumbnail_url, thumbnail_text, views, published_at
@@ -5699,9 +5780,14 @@ export function listOwnThumbnailWinners(
          AND thumbnail_url IS NOT NULL
          AND published_at IS NOT NULL
          AND published_at <= ?
+         ${windowFloor !== null ? "AND published_at >= ?" : ""}
          AND (duration_seconds IS NULL OR duration_seconds > ?)`
     )
-    .all(channelId, thumbMaturityCutoff(), THUMB_SHORT_MAX_SECONDS) as Array<{
+    .all(
+      ...(windowFloor !== null
+        ? [channelId, thumbMaturityCutoff(), windowFloor, THUMB_SHORT_MAX_SECONDS]
+        : [channelId, thumbMaturityCutoff(), THUMB_SHORT_MAX_SECONDS])
+    ) as Array<{
     id: string;
     title: string;
     thumbnail_url: string | null;
@@ -5733,10 +5819,15 @@ export function listOwnThumbnailWinners(
  * Top-performing mature thumbnails across the competitors visible to
  * this channel. Each competitor is normalised against ITS OWN median so
  * a 5M-subscriber channel does not drown out the rest of the list.
+ *
+ * `windowMonths` bounds age the same way `listOwnThumbnailWinners` does,
+ * and for the same reason: a competitor's years-old look shouldn't blend
+ * with their current one either.
  */
 export function listCompetitorThumbnailWinners(
   channelId: string,
-  limit = 12
+  limit = 12,
+  windowMonths: number | null = null
 ): ThumbnailWinner[] {
   const competitors = db
     .prepare(
@@ -5752,6 +5843,7 @@ export function listCompetitorThumbnailWinners(
     .all(channelId) as Array<{ id: number; title: string | null }>;
 
   const cutoff = thumbMaturityCutoff();
+  const windowFloor = thumbWindowFloor(windowMonths);
   const out: ThumbnailWinner[] = [];
 
   for (const comp of competitors) {
@@ -5763,9 +5855,14 @@ export function listCompetitorThumbnailWinners(
            AND thumbnail_url IS NOT NULL
            AND published_at IS NOT NULL
            AND published_at <= ?
+           ${windowFloor !== null ? "AND published_at >= ?" : ""}
            AND (duration_seconds IS NULL OR duration_seconds > ?)`
       )
-      .all(comp.id, cutoff, THUMB_SHORT_MAX_SECONDS) as Array<{
+      .all(
+        ...(windowFloor !== null
+          ? [comp.id, cutoff, windowFloor, THUMB_SHORT_MAX_SECONDS]
+          : [comp.id, cutoff, THUMB_SHORT_MAX_SECONDS])
+      ) as Array<{
       video_id: string;
       title: string;
       thumbnail_url: string | null;
@@ -5827,6 +5924,12 @@ export type ThumbnailStyleProfileRow = {
   low_confidence: number;
   model: string;
   computed_at: number;
+  /** Months of history the saved profile drew from; null = all time (or
+   *  a profile computed before this column existed -- treated the same). */
+  window_months: number | null;
+  /** 1 when the requested window had too few thumbnails and was widened
+   *  automatically before this profile was computed. */
+  window_widened: number;
 };
 
 export function getThumbnailStyleProfile(
@@ -5844,12 +5947,16 @@ export function saveThumbnailStyleProfile(input: {
   competitorVideoIds: string[];
   lowConfidence: boolean;
   model: string;
+  /** The window actually used for this run (after any auto-widening). */
+  windowMonths: number | null;
+  widened: boolean;
 }): void {
   db.prepare(
     `INSERT INTO thumbnail_style_profiles
        (channel_id, profile_json, own_sample_size, competitor_sample_size,
-        own_video_ids, competitor_video_ids, low_confidence, model, computed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        own_video_ids, competitor_video_ids, low_confidence, model, computed_at,
+        window_months, window_widened)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(channel_id) DO UPDATE SET
        profile_json = excluded.profile_json,
        own_sample_size = excluded.own_sample_size,
@@ -5858,7 +5965,9 @@ export function saveThumbnailStyleProfile(input: {
        competitor_video_ids = excluded.competitor_video_ids,
        low_confidence = excluded.low_confidence,
        model = excluded.model,
-       computed_at = excluded.computed_at`
+       computed_at = excluded.computed_at,
+       window_months = excluded.window_months,
+       window_widened = excluded.window_widened`
   ).run(
     input.channelId,
     input.profileJson,
@@ -5868,7 +5977,9 @@ export function saveThumbnailStyleProfile(input: {
     JSON.stringify(input.competitorVideoIds),
     input.lowConfidence ? 1 : 0,
     input.model,
-    Math.floor(Date.now() / 1000)
+    Math.floor(Date.now() / 1000),
+    input.windowMonths,
+    input.widened ? 1 : 0
   );
 }
 

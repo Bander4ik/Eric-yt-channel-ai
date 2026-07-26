@@ -61,7 +61,7 @@ export function preflight(channelId: string): Preflight {
       ok: false,
       status: 400,
       error:
-        "No text model is configured. Add a Claude or a Gemini API key in Integrations — Gemini has a free tier.",
+        "No text model is configured. Add a Claude or a Gemini API key in Settings — Gemini has a free tier.",
     };
   }
 
@@ -71,7 +71,7 @@ export function preflight(channelId: string): Preflight {
       ok: false,
       status: 400,
       error:
-        "No image provider is configured. Add one in Integrations and make it active.",
+        "No image provider is configured. Add one in Settings and make it active.",
     };
   }
 

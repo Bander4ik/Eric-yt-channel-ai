@@ -7,7 +7,7 @@ import {
   Eye,
   Video,
   TrendingUp,
-  Plug,
+  Settings,
   Award,
   Flame,
   ChevronDown,
@@ -247,13 +247,13 @@ export default function DashboardPage() {
             <CardDescription>{t.dashboard.noData}</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Empty-state CTA: bind a YouTube channel via the Integrations
-                page. CSV import was removed — local installs connect their
+            {/* Empty-state CTA: bind a YouTube channel via Settings.
+                CSV import was removed — local installs connect their
                 channel through the YouTube Data API binder instead. */}
-            <Link href="/integrations">
+            <Link href="/settings">
               <Button size="sm" className="gap-2">
-                <Plug className="h-4 w-4" />
-                {t.nav.integrations}
+                <Settings className="h-4 w-4" />
+                {t.nav.settings}
               </Button>
             </Link>
           </CardContent>

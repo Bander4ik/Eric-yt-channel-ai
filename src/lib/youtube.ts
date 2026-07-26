@@ -697,6 +697,14 @@ export async function searchYouTube(
      * all-time relevance and fresh-trend scans come back empty. */
     publishedAfter?: string;
     order?: "relevance" | "date" | "viewCount";
+    /** Biases (does NOT hard-filter) results toward this language, e.g.
+     * "en". YouTube's own docs are explicit that this only nudges
+     * ranking — a caller that needs a hard guarantee still has to check
+     * the language of what comes back itself. */
+    relevanceLanguage?: string;
+    /** Biases results toward this region, e.g. "US". Same soft-filter
+     * caveat as relevanceLanguage. */
+    regionCode?: string;
   } = {}
 ): Promise<{ id: string; kind: string; title: string; channelTitle: string; publishedAt: string }[]> {
   const res = await call<{
@@ -713,6 +721,8 @@ export async function searchYouTube(
       maxResults: opts.maxResults ?? 10,
       ...(opts.publishedAfter ? { publishedAfter: opts.publishedAfter } : {}),
       ...(opts.order ? { order: opts.order } : {}),
+      ...(opts.relevanceLanguage ? { relevanceLanguage: opts.relevanceLanguage } : {}),
+      ...(opts.regionCode ? { regionCode: opts.regionCode } : {}),
     },
     apiKey
   );
@@ -723,4 +733,37 @@ export async function searchYouTube(
     channelTitle: it.snippet.channelTitle,
     publishedAt: it.snippet.publishedAt,
   }));
+}
+
+/**
+ * Batch-fetch channel subscriber counts for the channel-size sanity
+ * filter in Niche Watch. Cheap: 1 unit per batch of up to 50 IDs,
+ * regardless of `part` — same cost class as fetchVideos, not the
+ * search endpoint's 100 units.
+ */
+export async function fetchChannelSubscriberCounts(
+  channelIds: string[],
+  apiKey: string
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  const uniqueIds = [...new Set(channelIds)].filter(Boolean);
+  for (let i = 0; i < uniqueIds.length; i += 50) {
+    const batch = uniqueIds.slice(i, i + 50);
+    const res = await call<{
+      items: {
+        id: string;
+        statistics?: { subscriberCount?: string; hiddenSubscriberCount?: boolean };
+      }[];
+    }>("channels", { part: "statistics", id: batch.join(",") }, apiKey);
+    for (const c of res.items ?? []) {
+      const st = c.statistics ?? {};
+      out.set(
+        c.id,
+        st.hiddenSubscriberCount || !st.subscriberCount
+          ? null
+          : parseInt(st.subscriberCount, 10)
+      );
+    }
+  }
+  return out;
 }

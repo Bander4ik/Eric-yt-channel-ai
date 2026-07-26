@@ -807,13 +807,13 @@ export default function CompetitorsPage() {
         </Card>
       )}
 
-      {/* Footnote pointing to /integrations. Backend: YouTube Data
+      {/* Footnote pointing to /settings. Backend: YouTube Data
           API primary, Apify only as a fallback when no YT key is set
           (or quota is exhausted). The old footer claimed "uses your
           Apify integration" which is no longer accurate. */}
       <p className="mt-6 text-center text-[11px] text-muted-foreground">
         Competitor sync uses your{" "}
-        <Link href="/integrations" className="text-primary hover:underline">
+        <Link href="/settings" className="text-primary hover:underline">
           YouTube Data API key
         </Link>{" "}
         (Apify is only a fallback if you haven&apos;t configured one). Gap

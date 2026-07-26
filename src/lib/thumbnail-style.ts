@@ -98,6 +98,107 @@ export const MAX_COMPETITOR_REFS = 12;
 /** A cached profile older than this is recomputed on the next visit. */
 export const PROFILE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
+/* ------------------------------------------------------------------ *
+ * Style window — how far back a thumbnail can be and still count
+ * ------------------------------------------------------------------ *
+ *
+ * The maturity floor (THUMB_MIN_AGE_DAYS in db.ts) stops immature videos
+ * from distorting the ranking. This is the other end: a MAXIMUM age,
+ * because a channel that changed its thumbnail style at some point will
+ * otherwise have its old look and its new one averaged together into a
+ * profile that matches neither -- exactly the client complaint this
+ * feature exists to fix.
+ *
+ * The right window is channel-specific (a recent rebrand needs a tight
+ * one, a channel that's looked the same for years doesn't), so it's a
+ * per-channel setting (`getThumbnailStyleWindowSetting` /
+ * `setThumbnailStyleWindowMonths` in db.ts) rather than a fixed constant.
+ * This is just the menu of choices offered for it.
+ */
+export const STYLE_WINDOW_OPTIONS: { months: number | null; label: string }[] = [
+  { months: 6, label: "Last 6 months" },
+  { months: 12, label: "Last 12 months" },
+  { months: 24, label: "Last 24 months" },
+  { months: null, label: "All time" },
+];
+
+/**
+ * Default for a channel that hasn't chosen a window yet.
+ *
+ * 24 months is a deliberate middle ground: tight enough that a channel
+ * which rebranded a year or two back won't have its retired look still
+ * outvoting the current one, but wide enough that a small or
+ * slow-posting channel -- one video every month or two is common here --
+ * still has a real pool of mature, proven winners to learn from instead
+ * of being starved down to a couple of images. Existing installs had no
+ * window at all (effectively "all time"), so this default is the
+ * generous end of the new options rather than the tightest one, to avoid
+ * silently shrinking anyone's reference set out from under them.
+ */
+export const DEFAULT_STYLE_WINDOW_MONTHS: number | null = 24;
+
+/**
+ * Below this many usable thumbnails (own + competitor combined), a
+ * "style profile" is a guess wearing a lab coat, not a pattern. Rather
+ * than build one anyway, `selectThumbnailWindow` widens the window a
+ * step at a time until either this floor is cleared or "all time" is
+ * reached; if even "all time" doesn't clear it, the caller refuses
+ * outright and says exactly how many were found.
+ */
+export const STYLE_WINDOW_STARVATION_FLOOR = 3;
+
+export type ThumbnailWindowSelection = {
+  own: ThumbnailWinner[];
+  competitor: ThumbnailWinner[];
+  /** The window actually used, after any auto-widening. */
+  windowMonths: number | null;
+  /** What was asked for, before widening. */
+  requestedWindowMonths: number | null;
+  widened: boolean;
+};
+
+/**
+ * Picks the winner lists for a style analysis, auto-widening the window
+ * if the requested one starves the pool (see
+ * STYLE_WINDOW_STARVATION_FLOOR). Own-channel and competitor selections
+ * always use the same window so both describe the same era of the
+ * channel's look.
+ */
+export function selectThumbnailWindow(
+  channelId: string,
+  requestedMonths: number | null
+): ThumbnailWindowSelection {
+  const startIdx = STYLE_WINDOW_OPTIONS.findIndex(
+    (o) => o.months === requestedMonths
+  );
+  const sequence =
+    startIdx >= 0 ? STYLE_WINDOW_OPTIONS.slice(startIdx) : STYLE_WINDOW_OPTIONS;
+
+  let own: ThumbnailWinner[] = [];
+  let competitor: ThumbnailWinner[] = [];
+  let usedMonths: number | null = requestedMonths;
+
+  for (const opt of sequence) {
+    own = listOwnThumbnailWinners(channelId, MAX_OWN_REFS, opt.months);
+    competitor = listCompetitorThumbnailWinners(
+      channelId,
+      MAX_COMPETITOR_REFS,
+      opt.months
+    );
+    usedMonths = opt.months;
+    if (own.length + competitor.length >= STYLE_WINDOW_STARVATION_FLOOR) break;
+    if (opt.months === null) break; // nothing wider left to try
+  }
+
+  return {
+    own,
+    competitor,
+    windowMonths: usedMonths,
+    requestedWindowMonths: requestedMonths,
+    widened: usedMonths !== requestedMonths,
+  };
+}
+
 export type StyleTrait = {
   summary: string;
   n: number;
@@ -221,28 +322,24 @@ async function fetchThumbnail(
 export type CollectProgress = (done: number, total: number) => void;
 
 /**
- * Winners plus their image bytes, ready for the model. Individual
+ * Downloads a given pair of winner lists, image bytes and all. Individual
  * download failures are skipped rather than aborting — one dead CDN
  * entry must not cost the user the whole analysis.
  */
-export async function collectReferenceThumbnails(
+async function downloadWinners(
   channelId: string,
+  winners: { own: ThumbnailWinner[]; competitor: ThumbnailWinner[] },
   onProgress?: CollectProgress
 ): Promise<{ own: ReferenceThumbnail[]; competitor: ReferenceThumbnail[] }> {
-  const ownWinners = listOwnThumbnailWinners(channelId, MAX_OWN_REFS);
-  const compWinners = listCompetitorThumbnailWinners(
-    channelId,
-    MAX_COMPETITOR_REFS
-  );
-  const total = ownWinners.length + compWinners.length;
+  const total = winners.own.length + winners.competitor.length;
   let done = 0;
 
   const load = async (
-    winners: ThumbnailWinner[],
+    list: ThumbnailWinner[],
     source: "own" | "competitor"
   ): Promise<ReferenceThumbnail[]> => {
     const out: ReferenceThumbnail[] = [];
-    for (const w of winners) {
+    for (const w of list) {
       if (w.thumbnailUrl) {
         try {
           const { bytes, mimeType, sourceUrl } = await fetchThumbnail(
@@ -274,9 +371,55 @@ export async function collectReferenceThumbnails(
   };
 
   return {
-    own: await load(ownWinners, "own"),
-    competitor: await load(compWinners, "competitor"),
+    own: await load(winners.own, "own"),
+    competitor: await load(winners.competitor, "competitor"),
   };
+}
+
+/**
+ * Winners plus their image bytes for the GENERATION path (weaving
+ * references into a new cover's prompt).
+ *
+ * `windowMonths` defaults to `null` (all time) so any caller that still
+ * invokes this with just a channel id — the historical signature — gets
+ * the historical behaviour, unchanged. `thumbnail-generate.ts` passes the
+ * SAME window the channel's saved style profile was built with, so the
+ * pictures hand-fed to the image model can never disagree with the
+ * profile describing them: a profile built from the last 6 months has no
+ * business handing the model a reference photo from three years ago.
+ */
+export async function collectReferenceThumbnails(
+  channelId: string,
+  windowMonths: number | null = null,
+  onProgress?: CollectProgress
+): Promise<{ own: ReferenceThumbnail[]; competitor: ReferenceThumbnail[] }> {
+  return downloadWinners(
+    channelId,
+    {
+      own: listOwnThumbnailWinners(channelId, MAX_OWN_REFS, windowMonths),
+      competitor: listCompetitorThumbnailWinners(
+        channelId,
+        MAX_COMPETITOR_REFS,
+        windowMonths
+      ),
+    },
+    onProgress
+  );
+}
+
+/**
+ * Downloads exactly the winner lists `selectThumbnailWindow` picked.
+ * Kept separate from `collectReferenceThumbnails` above so the style
+ * route and the generation path can't drift apart by accident: the style
+ * route must download the SAME list it reported counts for (including
+ * any auto-widening), not re-query and risk a different answer.
+ */
+export async function collectReferenceThumbnailsForWindow(
+  channelId: string,
+  winners: { own: ThumbnailWinner[]; competitor: ThumbnailWinner[] },
+  onProgress?: CollectProgress
+): Promise<{ own: ReferenceThumbnail[]; competitor: ReferenceThumbnail[] }> {
+  return downloadWinners(channelId, winners, onProgress);
 }
 
 /* ------------------------------------------------------------------ *

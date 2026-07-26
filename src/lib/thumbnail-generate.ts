@@ -6,6 +6,7 @@ import {
   createThumbnailVariant,
   DATA_DIR,
   getChannelFontPath,
+  getThumbnailStyleProfile,
   listBrandAssets,
   listRecentChannelTitles,
   setThumbnailRunCost,
@@ -107,7 +108,15 @@ export async function runGeneration(
   const aspect: AspectChoice = input.aspect ?? DEFAULT_ASPECT;
   const report = input.onProgress ?? (() => {});
 
-  const refs = await collectReferenceThumbnails(channelId);
+  // Use the SAME age window the channel's saved style profile was built
+  // with, so the pictures we hand the image model can never disagree
+  // with the profile describing them. A profile built pre-migration (or
+  // deliberately at "all time") has window_months = NULL, and that's
+  // preserved as-is here rather than guessed at -- an old profile really
+  // was built from the full history, and narrowing it now would change
+  // a user's results with no explanation.
+  const windowMonths = getThumbnailStyleProfile(channelId)?.window_months ?? null;
+  const refs = await collectReferenceThumbnails(channelId, windowMonths);
   const woven = weaveReferences(
     refs.own.map((r) => ({
       videoId: r.videoId,

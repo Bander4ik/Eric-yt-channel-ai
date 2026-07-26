@@ -209,7 +209,7 @@ export function EditorBillingCard() {
             {/* Refresh button pulls the latest 50 uploads per channel
                 from YouTube so video counts here reflect reality —
                 without it the counts only show videos that happened to
-                be in the local DB at the last manual /integrations
+                be in the local DB at the last manual /settings
                 sync, which is days/weeks stale by the time editor
                 payday rolls around. Hits a lightweight endpoint that
                 only fetches details for IDs we don't already have. */}

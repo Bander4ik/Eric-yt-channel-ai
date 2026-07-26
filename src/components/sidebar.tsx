@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Video,
   MessageSquare,
-  Plug,
   Settings,
   PlaySquare,
   ScrollText,
@@ -142,7 +141,6 @@ export function Sidebar() {
     {
       label: "Config",
       items: [
-        { href: "/integrations", label: t.nav.integrations, icon: Plug, badge: 0 },
         // Logs entry is opt-in — only rendered when the Settings toggle
         // flips `showLogs` on. The /logs route stays reachable by direct
         // URL either way.

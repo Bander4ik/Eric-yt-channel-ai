@@ -1,7 +1,7 @@
 /**
  * Image-generation provider constants shared by server and client.
  *
- * Deliberately NOT marked `server-only` — the Integrations page and the
+ * Deliberately NOT marked `server-only` — the Settings page and the
  * Thumbnails tab both need the model lists and the price estimates to
  * render, and duplicating them client-side is how the two drift apart.
  * The actual SDK calls live in `image-provider.ts`, which IS server-only.

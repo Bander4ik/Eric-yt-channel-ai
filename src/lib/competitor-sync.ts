@@ -209,7 +209,7 @@ export async function syncCompetitor(competitorId: number): Promise<SyncResult> 
   }
 
   throw new CompetitorSyncError(
-    "No competitor-sync backend configured. Add a YouTube Data API key in Integrations (free, recommended) or an Apify token as a fallback."
+    "No competitor-sync backend configured. Add a YouTube Data API key in Settings (free, recommended) or an Apify token as a fallback."
   );
 }
 

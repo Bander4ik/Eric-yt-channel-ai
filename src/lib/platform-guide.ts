@@ -69,7 +69,7 @@ channel only.
 - **(top)** Dashboard, Videos, AI Chat
 - **Title insights**: Hook Lab, Formula Analyzer, Hooks Library
 - **Research**: Competitors, Alerts
-- **Config**: Integrations, Logs (hidden unless enabled), Settings`,
+- **Config**: Settings (API keys, channel binding, usage, appearance — one page), Logs (hidden unless enabled)`,
 
   dashboard: `# Dashboard (/)
 
@@ -97,7 +97,7 @@ The landing page. Channel-level overview for the active channel.
 - "Why are my numbers stale?" → hit Refresh, or run a channel Sync
   from the Videos page.
 - "Where did the earnings widgets go?" → they need Google OAuth
-  connected in Integrations → Advanced.`,
+  connected in Settings → Required to work → Google OAuth.`,
 
   videos: `# Videos (/videos)
 
@@ -149,7 +149,7 @@ video that has a transcript.
 
 ## Requirements
 - Each video needs a transcript first (Videos page → Transcribe).
-- Needs a Claude or Gemini API key in Integrations.
+- Needs a Claude or Gemini API key in Settings.
 
 ## Common questions
 - "Analyze pending does nothing / fails." → usually the AI provider
@@ -217,7 +217,7 @@ Competitor sync uses the YouTube Data API key first; Apify is a
 fallback only if no YouTube key is configured.
 
 ## Common questions
-- "Sync fails." → check the YouTube Data API key in Integrations.
+- "Sync fails." → check the YouTube Data API key in Settings.
   Gap analysis and alerts still work on already-synced data.`,
 
   chat: `# AI Chat (/chat)
@@ -239,34 +239,46 @@ plus live tools.
 Everything: channel stats, videos, transcripts, comments, Hook Lab
 scores, Formula Analyzer stats, competitor data, YouTube Analytics,
 plus web search. If a tool needs a key the user hasn't set, the AI
-will say which key to add in Integrations.
+will say which key to add in Settings.
 
 ## Common questions
 - "The chat gives generic answers." → make sure an AI provider key is
   set; ask a specific question; the AI works best when you give it
   details about your goal.`,
 
-  integrations: `# Integrations (/integrations)
+  integrations: `# API keys & connections — now part of Settings (/settings)
 
-Where the user pastes API keys. Each card has step-by-step setup
-instructions.
+The former standalone Integrations page was merged into Settings
+(2026-07): one page, no separate "Integrations" entry in the sidebar.
+Old /integrations links still work — they redirect straight to
+/settings. Each key is a single compact row (name, connected status,
+masked value, Set/Replace button); setup steps are collapsed behind a
+"how to get a key" disclosure per row.
 
-## Groups
-- **Core** — YouTube Data API key (required to sync a channel),
-  Claude and/or Gemini key (required for AI features). The user needs
-  YouTube + at least one AI key.
-- **Optional add-ons** — Deepgram (the transcription engine — required
-  if you want video transcripts at all), Apify (competitor-scrape
-  fallback).
-- **Advanced** — Google OAuth, collapsed by default. Connects YouTube
-  Analytics for Studio-grade data (retention, traffic, revenue).
+## Settings page sections, top to bottom
+- **Required to work** — YouTube Data API key (required to sync a
+  channel), an AI provider picker (choose Claude or Gemini — only the
+  chosen one's key field shows), and Google OAuth (optional but
+  recommended — unlocks Studio Analytics and revenue).
+- **Channel** — bind/sync the YouTube channel, manage YouTube cookies.
+- **Optional** (collapsed by default) — Deepgram (transcription
+  engine — required if you want video transcripts at all), Apify
+  (competitor-scrape fallback), image-generation providers for
+  Thumbnails.
+- **Usage** (collapsed by default) — Claude / Apify / Deepgram spend
+  and usage widgets.
+- **Appearance** (collapsed by default) — theme, optional UI sections.
 
 ## Common questions
 - "Which keys do I actually need?" → YouTube Data API + one AI key
   (Claude or Gemini). Everything else is optional.
-- "Web search needs a key?" → no, it's built into Claude now.`,
+- "Web search needs a key?" → no, it's built into Claude now.
+- "Where did the Integrations page go?" → merged into Settings.`,
 
   settings: `# Settings (/settings)
+
+One page for everything: API keys & connections (see above), channel
+binding, optional add-ons, usage, and appearance.
 
 - **Theme** — light / dark.
 - **Optional sections** — toggles for power-user surfaces hidden by
@@ -301,11 +313,11 @@ never spins forever).
 - **AI feature fails with a billing error** → the Claude account is
   out of credit. Top up at console.anthropic.com, or switch to Gemini
   where a model picker exists (Hook Lab, chat header).
-- **"API key not configured"** → Integrations → the named card →
-  paste key → Save.
-- **YouTube Analytics widgets empty** → needs Google OAuth
-  (Integrations → Advanced). Revenue specifically needs Owner-tier
-  access on the channel.
+- **"API key not configured"** → Settings → the named row → paste
+  key → Save.
+- **YouTube Analytics widgets empty** → needs Google OAuth (Settings
+  → Required to work → Google OAuth). Revenue specifically needs
+  Owner-tier access on the channel.
 - **Hook Lab "pending" count looks wrong** → it counts videos that
   have a transcript but no hook scores, for the ACTIVE channel only.
 - **Wrong channel's data showing** → check the Channel Switcher in

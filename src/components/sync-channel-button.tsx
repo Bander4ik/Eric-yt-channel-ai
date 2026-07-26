@@ -17,9 +17,9 @@ import { Button } from "@/components/ui/button";
  * everywhere.
  *
  * Why this exists: previously a channel was only ever synced once, at
- * the moment it was added on the Integrations page. New uploads after
+ * the moment it was added on the Settings page. New uploads after
  * that never appeared until the user manually re-synced from
- * Integrations — which most users never discovered. This button makes
+ * Settings — which most users never discovered. This button makes
  * "pull my latest videos" a one-click action from the page where the
  * user actually looks at their videos.
  *

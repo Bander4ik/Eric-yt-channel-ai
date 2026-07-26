@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   const apiKey = getIntegration("claude")?.api_key;
   if (!apiKey) {
     return Response.json(
-      { error: "Claude API key is not configured. Add it in Integrations." },
+      { error: "Claude API key is not configured. Add it in Settings." },
       { status: 400 }
     );
   }

@@ -132,7 +132,7 @@ function pctChange(curr: number, prev: number): number | null {
  * The Studio-style "Last X days" overview block. Lives on Dashboard,
  * pulls from /api/analytics/overview which proxies YouTube Analytics API
  * with a 6h cache. When Google OAuth isn't connected we render a
- * lightweight CTA card pointing at /integrations instead.
+ * lightweight CTA card pointing at /settings instead.
  */
 export function StudioOverview() {
   const [period, setPeriod] = useState("28d");
@@ -175,7 +175,7 @@ export function StudioOverview() {
               Connect Google OAuth to see Studio-style channel analytics — views
               over time, watch time, subscriber dynamics, top videos by period.
             </p>
-            <Link href="/integrations#youtube-analytics">
+            <Link href="/settings#youtube-analytics">
               <Button size="sm" variant="outline" className="mt-2 gap-2">
                 Connect YouTube Analytics
                 <ArrowUpRight className="h-3.5 w-3.5" />
@@ -254,8 +254,8 @@ export function StudioOverview() {
                   Channel owner clicks <strong>Reconnect</strong> on this
                   machine themselves, with their own Google account. Their
                   refresh token gets saved locally —{" "}
-                  <Link href="/integrations#youtube-analytics" className="text-primary hover:underline">
-                    Integrations
+                  <Link href="/settings#youtube-analytics" className="text-primary hover:underline">
+                    Settings
                   </Link>
                   .
                 </li>

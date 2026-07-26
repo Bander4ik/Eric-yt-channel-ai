@@ -135,7 +135,7 @@ export async function POST(req: Request) {
   const apiKey = getIntegration("youtube")?.api_key;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "YouTube API key is not configured. Add it in Integrations." },
+      { error: "YouTube API key is not configured. Add it in Settings." },
       { status: 400 }
     );
   }

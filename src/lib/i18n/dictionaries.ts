@@ -4,7 +4,6 @@ type DictionaryShape = {
     dashboard: string;
     videos: string;
     chat: string;
-    integrations: string;
     logs: string;
     settings: string;
   };
@@ -100,7 +99,7 @@ type DictionaryShape = {
     reTranscribeHint: string;
     reTranscribeConfirm: string;
     deepgramNotConfigured: string;
-    openIntegrations: string;
+    openSettings: string;
   };
   channel: {
     backToDashboard: string;
@@ -248,14 +247,10 @@ type DictionaryShape = {
     done: string;
   };
   integrations: {
-    title: string;
-    subtitle: string;
     save: string;
     saved: string;
     showKey: string;
     hideKey: string;
-    connect: string;
-    comingSoon: string;
     status: { connected: string; notConnected: string };
     claude: {
       name: string;
@@ -343,7 +338,7 @@ type DictionaryShape = {
     doneSpent: string;
     failed: string;
     notConfiguredHint: string;
-    goToIntegrations: string;
+    goToSettings: string;
     // Confirm modal
     modalTitle: string;
     modalSubtitle: string;
@@ -356,7 +351,7 @@ type DictionaryShape = {
     firstFew: string;
     confirm: string;
     cancel: string;
-    // Usage widget on Integrations page
+    // Usage widget on Settings page
     usageTitle: string;
     transcriptsCount: string;
     of: string;
@@ -416,7 +411,6 @@ export const dictionaries: { en: DictionaryShape } = {
       dashboard: "Dashboard",
       videos: "Videos",
       chat: "AI Chat",
-      integrations: "Integrations",
       logs: "Logs",
       settings: "Settings",
     },
@@ -447,7 +441,7 @@ export const dictionaries: { en: DictionaryShape } = {
       connectTitle: "Connect your integrations to get started",
       connectDesc:
         "Add your API keys for Claude, Apify, Exa, NexLev and YouTube to unlock full analysis.",
-      connectCta: "Go to Integrations",
+      connectCta: "Go to Settings",
     },
     dashboard: {
       title: "Dashboard",
@@ -528,12 +522,12 @@ export const dictionaries: { en: DictionaryShape } = {
         "Replace the current transcript with a fresh Deepgram run? You'll be charged for another transcription on your Deepgram account.",
       deepgramNotConfigured:
         "Deepgram isn't configured yet — without it we can't transcribe videos that lack YouTube captions.",
-      openIntegrations: "Open Integrations",
+      openSettings: "Open Settings",
     },
     channel: {
       backToDashboard: "Back to dashboard",
       emptyTitle: "No channel bound yet",
-      emptyDesc: "Bind your YouTube channel from the Integrations page to populate this view.",
+      emptyDesc: "Bind your YouTube channel from the Settings page to populate this view.",
       unknownTitle: "Unnamed channel",
       openOnYouTube: "Open on YouTube",
       aboutTitle: "About",
@@ -619,7 +613,7 @@ export const dictionaries: { en: DictionaryShape } = {
       send: "Send",
       emptyHint:
         "Try: \"What are my top performing videos?\" or \"Suggest 5 new video ideas based on my niche\"",
-      missingKey: "Add your Claude API key in Integrations to start chatting.",
+      missingKey: "Add your Claude API key in Settings to start chatting.",
       newChat: "New chat",
       noSessions: "No chats yet",
       untitled: "Untitled chat",
@@ -669,14 +663,10 @@ export const dictionaries: { en: DictionaryShape } = {
         "AI can't analyze comments for this video until you sync them. One click → all comments and replies are pulled into the local DB so chat tools can read them.",
     },
     integrations: {
-      title: "Integrations",
-      subtitle: "Connect external services to enable AI analysis",
       save: "Save",
       saved: "Saved",
       showKey: "Show",
       hideKey: "Hide",
-      connect: "Connect",
-      comingSoon: "Coming soon",
       status: {
         connected: "Connected",
         notConnected: "Not connected",
@@ -799,8 +789,8 @@ export const dictionaries: { en: DictionaryShape } = {
       doneSpent: "Spent: {amount}",
       failed: "failed",
       notConfiguredHint:
-        "Add your Deepgram API key in Integrations to transcribe videos without YouTube captions.",
-      goToIntegrations: "Open Integrations",
+        "Add your Deepgram API key in Settings to transcribe videos without YouTube captions.",
+      goToSettings: "Open Settings",
       modalTitle: "Transcribe missing videos",
       modalSubtitle: "Audio is streamed directly from YouTube to Deepgram — nothing is saved to your computer.",
       modalRowVideos: "Videos",

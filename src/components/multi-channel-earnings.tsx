@@ -299,7 +299,7 @@ export function MultiChannelEarnings() {
                 </div>
                 <p className="text-[10px] text-muted-foreground">
                   Net = gross − each channel&apos;s CMS / network cut (set in
-                  the Edit panel on /integrations).
+                  the Edit panel on /settings).
                   {useFallback && (
                     <>
                       {" "}
