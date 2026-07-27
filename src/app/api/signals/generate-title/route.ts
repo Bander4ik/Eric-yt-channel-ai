@@ -20,7 +20,13 @@ type GenerateTitleBody = {
   signal?: unknown;
 };
 
-type Variant = { title: string; thumbText: string; rationale: string };
+type Variant = {
+  title: string;
+  thumbText: string;
+  rationale: string;
+  angle: string | null;
+  distinctFrom: string | null;
+};
 
 /**
  * POST /api/signals/generate-title
@@ -36,7 +42,11 @@ type Variant = { title: string; thumbText: string; rationale: string };
  * verbatim into the Claude prompt — see BUILD 3 for the exact shapes
  * each signal type carries).
  *
- * Response: { variants: [{ title, thumbText, rationale }] } (1-3 items)
+ * Response: { variants: [{ title, thumbText, rationale, angle,
+ * distinctFrom }] } (1-3 items). `angle` is the distinct take this
+ * variant argues/reveals; `distinctFrom` is a one-sentence note on how
+ * it differs from the source title carried in the signal (null when
+ * the signal has no title to differ from, e.g. a content gap).
  * 400: no active channel / no Claude key / bad body.
  * 502: Claude responded but we couldn't parse 1-3 valid variants out of it.
  */
@@ -89,10 +99,30 @@ export async function POST(req: Request) {
     "channel's winning structure applied to the signal, (2) SAME " +
     "structure, different angle on the signal, (3) SAME signal topic, a " +
     "different proven hook pattern from the data. Same language as the " +
-    "channel's titles. Each with a matching short THUMBNAIL TEXT (<=6 " +
+    "channel's titles.\n\n" +
+    "HARD RULE — reuse structure, never substance: a hook PATTERN (the " +
+    "shape of the title — question / comparison / countdown / shocking " +
+    "statistic / etc.) may always be reused, that is the entire method. " +
+    "The specific SUBJECT and FRAMING of a title that appears inside the " +
+    "signal (e.g. a competitor's exact video title) may never be " +
+    "reproduced or lightly reworded — never reuse its wording, never " +
+    "just swap 1-2 words for synonyms. Apply this test to every " +
+    "candidate before outputting it: if a viewer who already watched the " +
+    "source video would think 'this is the same video', it is too " +
+    "close — throw it out and produce a genuinely different angle on " +
+    "the same territory instead. If the signal carries no title (e.g. a " +
+    "content gap keyword with no single source video), this rule is " +
+    "moot for that variant.\n\n" +
+    "For each variant also give: (a) angle — in a few words, the " +
+    "distinct take THIS video argues or reveals that the source (if " +
+    "any) does not, and (b) distinctFrom — one sentence naming " +
+    "concretely how this title differs from the source title in the " +
+    "signal; set distinctFrom to null when the signal has no source " +
+    "title to differ from (e.g. a content gap).\n\n" +
+    "Each candidate also needs a matching short THUMBNAIL TEXT (<=6 " +
     "words, punchy) and a one-sentence rationale that cites the data. " +
     'STRICT JSON only: {"variants":[{"title":"...","thumbText":"...",' +
-    '"rationale":"..."}]}';
+    '"rationale":"...","angle":"...","distinctFrom":"..." or null}]}';
 
   const payload = {
     signal: body.signal,
@@ -106,7 +136,11 @@ export async function POST(req: Request) {
   try {
     const response = await client.messages.create({
       model: ANALYZER_MODEL,
-      max_tokens: 1000,
+      // Each variant grew two more fields (angle, distinctFrom) on top
+      // of title/thumbText/rationale, so the old 1000-token budget for
+      // 3 variants is too tight — 1600 leaves headroom without letting
+      // this balloon.
+      max_tokens: 1600,
       // Sonnet 5 thinks by default and thinking eats into max_tokens, so disable it
       // to keep this small budget available for the JSON output.
       thinking: { type: "disabled" },
@@ -156,7 +190,10 @@ function extractJson(text: string): string {
  * title strings. Returns null on any structural failure (caller maps
  * that to a 502 asking the user to retry). thumbText/rationale are
  * coerced to "" if missing/non-string rather than failing the whole
- * variant — a title with a blank rationale is still usable. */
+ * variant — a title with a blank rationale is still usable. angle/
+ * distinctFrom are newer, model-optional fields: coerced to null (not
+ * dropped, not a parse failure) whenever missing or non-string, so a
+ * model that omits them still yields usable rows. */
 function parseVariants(raw: string): Variant[] | null {
   let parsed: unknown;
   try {
@@ -175,10 +212,17 @@ function parseVariants(raw: string): Variant[] | null {
     if (typeof title !== "string" || !title.trim()) continue;
     const thumbText = (v as { thumbText?: unknown }).thumbText;
     const rationale = (v as { rationale?: unknown }).rationale;
+    const angle = (v as { angle?: unknown }).angle;
+    const distinctFrom = (v as { distinctFrom?: unknown }).distinctFrom;
     variants.push({
       title: title.trim(),
       thumbText: typeof thumbText === "string" ? thumbText.trim() : "",
       rationale: typeof rationale === "string" ? rationale.trim() : "",
+      angle: typeof angle === "string" && angle.trim() ? angle.trim() : null,
+      distinctFrom:
+        typeof distinctFrom === "string" && distinctFrom.trim()
+          ? distinctFrom.trim()
+          : null,
     });
   }
 

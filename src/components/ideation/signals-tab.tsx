@@ -745,6 +745,8 @@ function NicheHitRow({
         vph: h.vph,
         niche: h.nicheQuery,
       }}
+      signalLabel={`Trending right now in a niche you're watching ("${h.nicheQuery}") — a video outside your channel is spiking; a different angle on the same territory could ride that same wave.`}
+      signalKind="Trending in your niche"
     >
       <div className="min-w-0 flex-1">
         <a
@@ -866,6 +868,10 @@ function OutlierRow({
     },
   };
 
+  const outlierLabel = provenHit
+    ? "Proven hit — an older competitor video that's still outperforming its channel's norm long after publishing, so the pull isn't a fluke. Copying its title would republish someone else's video; a fresh angle on the same territory is what's usable."
+    : "Competitor outlier — a video that's currently pulling far more views than that channel's usual output, so the topic has proven audience demand right now. Its exact title isn't yours to reuse — the generated variants below take a different angle on the same territory.";
+
   return (
     <SignalRow
       draft={draft}
@@ -878,6 +884,8 @@ function OutlierRow({
         kind: o.kind,
         ageHours: o.ageHours,
       }}
+      signalLabel={outlierLabel}
+      signalKind={provenHit ? "Proven hit" : "Competitor outlier"}
       endSlot={
         <DismissAlertButton
           alertId={o.id}
@@ -984,6 +992,8 @@ function GapRow({ gap: g }: { gap: Gap }) {
         competitorTotalViews: g.competitorTotalViews,
         exampleCompetitorTitle: g.exampleCompetitorTitle,
       }}
+      signalLabel={`Content gap — competitors get real views (avg ${fmtCompact(g.avgViews)}) covering "${g.word}" and your channel hasn't touched it yet. There's no single source video to differ from here — the point is simply to fill a topic you're missing.`}
+      signalKind="Content gap"
     >
       <div className="min-w-0 flex-1">
         <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
@@ -1056,6 +1066,8 @@ function AudienceRow({ request: r }: { request: AudienceRequest }) {
         evidence: r.evidence,
         videoTitle: r.videoTitle,
       }}
+      signalLabel={`Audience request — your own viewers asked for this directly in the comments on "${r.videoTitle}" (${r.demand} demand). This is your channel's existing audience telling you what to make next.`}
+      signalKind="Audience request"
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
@@ -1097,18 +1109,40 @@ type VariantsState =
   | { kind: "error"; message: string }
   | { kind: "loaded"; variants: Variant[] };
 
-type Variant = { title: string; thumbText: string; rationale: string };
+type Variant = {
+  title: string;
+  thumbText: string;
+  rationale: string;
+  /** The distinct take this variant argues/reveals — null if the model
+   * omitted it (older responses, or a parse fallback). */
+  angle: string | null;
+  /** One sentence on how this differs from the signal's source title;
+   * null when the signal carries no source title (e.g. a content gap)
+   * or the model omitted it. */
+  distinctFrom: string | null;
+};
 
 function SignalRow({
   draft,
   generateType,
   generateSignal,
+  signalLabel,
+  signalKind,
   children,
   endSlot,
 }: {
   draft: IdeaDraft;
   generateType: GenerateType;
   generateSignal: unknown;
+  /** One plain-English line: what this signal IS and why it's worth
+   * acting on — a content gap and a competitor outlier mean different
+   * things and otherwise look alike. Shown once, on the row itself. */
+  signalLabel: string;
+  /** Short (2-4 word) name for the same signal — e.g. "Competitor
+   * outlier", "Content gap" — reused as the first link in each
+   * generated variant's chain so the card doesn't repeat signalLabel's
+   * full sentence three times over. */
+  signalKind: string;
   children: React.ReactNode;
   /** Optional trailing control rendered after the action buttons (e.g.
    * the outlier-only dismiss ✕). Kept generic/optional so Gap and
@@ -1150,6 +1184,7 @@ function SignalRow({
 
   return (
     <div className="rounded-lg border border-border/60 p-3">
+      <p className="mb-1.5 text-[11px] text-muted-foreground/80">{signalLabel}</p>
       <div className="flex items-start gap-3">
         {children}
         <div className="flex shrink-0 items-center gap-1.5">
@@ -1164,7 +1199,12 @@ function SignalRow({
 
       {expanded && (
         <div className="mt-3 border-t border-border/60 pt-3">
-          <VariantsPanel state={variantsState} onRetry={runGenerate} baseDraft={draft} />
+          <VariantsPanel
+            state={variantsState}
+            onRetry={runGenerate}
+            baseDraft={draft}
+            signalKind={signalKind}
+          />
         </div>
       )}
     </div>
@@ -1175,10 +1215,12 @@ function VariantsPanel({
   state,
   onRetry,
   baseDraft,
+  signalKind,
 }: {
   state: VariantsState;
   onRetry: () => void;
   baseDraft: IdeaDraft;
+  signalKind: string;
 }) {
   if (state.kind === "loading") {
     return (
@@ -1212,7 +1254,7 @@ function VariantsPanel({
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       {state.variants.map((v, i) => (
-        <VariantCard key={i} variant={v} baseDraft={baseDraft} />
+        <VariantCard key={i} variant={v} baseDraft={baseDraft} signalKind={signalKind} />
       ))}
     </div>
   );
@@ -1221,9 +1263,11 @@ function VariantsPanel({
 function VariantCard({
   variant: v,
   baseDraft,
+  signalKind,
 }: {
   variant: Variant;
   baseDraft: IdeaDraft;
+  signalKind: string;
 }) {
   // Keep the ORIGINAL signal's source_type/demand — this is still the
   // same underlying signal, just packaged via an AI-generated title
@@ -1239,6 +1283,16 @@ function VariantCard({
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 p-3">
+      {/* The chain, in order: signal it came from -> its distinct angle
+          -> the title itself. Short kind name only (the full one-line
+          explanation already lives once on the row above it) so 3 cards
+          side by side don't repeat a whole sentence 3 times. */}
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+        {signalKind}
+      </p>
+      {v.angle && (
+        <p className="text-xs font-medium text-primary">{v.angle}</p>
+      )}
       <p className="text-sm font-medium leading-snug">{v.title}</p>
       {v.thumbText && (
         <code className="w-fit rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium">
@@ -1247,6 +1301,11 @@ function VariantCard({
       )}
       {v.rationale && (
         <p className="text-xs text-muted-foreground">{v.rationale}</p>
+      )}
+      {v.distinctFrom && (
+        <p className="text-xs italic text-muted-foreground/90">
+          How this differs: {v.distinctFrom}
+        </p>
       )}
       <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
         <AddToIdeasButton draft={draft} />
