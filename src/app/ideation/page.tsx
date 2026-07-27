@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useUiPref } from "@/lib/ui-prefs";
 import {
   Lightbulb,
   LayoutDashboard,
@@ -32,6 +33,13 @@ export default function IdeationPage() {
   // natural entry point for the idea pipeline) — for now it's a stub,
   // so "videos" is the default until that build step lands.
   const [tab, setTab] = useState<Tab>("videos");
+  const [showBoard] = useUiPref("showIdeasBoard");
+
+  // Switching the board off while standing on it would otherwise leave the
+  // page showing a tab that no longer has a button to return to.
+  useEffect(() => {
+    if (!showBoard && tab === "board") setTab("videos");
+  }, [showBoard, tab]);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -46,10 +54,12 @@ export default function IdeationPage() {
       </header>
 
       <div className="mb-4 flex gap-4 border-b border-border">
-        <TabButton active={tab === "board"} onClick={() => setTab("board")}>
-          <LayoutDashboard className="h-3.5 w-3.5" />
-          Board
-        </TabButton>
+        {showBoard && (
+          <TabButton active={tab === "board"} onClick={() => setTab("board")}>
+            <LayoutDashboard className="h-3.5 w-3.5" />
+            Board
+          </TabButton>
+        )}
         <TabButton active={tab === "videos"} onClick={() => setTab("videos")}>
           <Video className="h-3.5 w-3.5" />
           Videos
@@ -71,7 +81,7 @@ export default function IdeationPage() {
         </TabButton>
       </div>
 
-      {tab === "board" && <BoardTab />}
+      {tab === "board" && showBoard && <BoardTab />}
       {tab === "videos" && <VideosTab />}
       {tab === "packaging" && <PackagingTab />}
       {tab === "signals" && <SignalsTab />}

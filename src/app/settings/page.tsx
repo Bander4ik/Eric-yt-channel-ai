@@ -49,6 +49,7 @@ export default function SettingsPage() {
   // them on here.
   const [showEditorBilling, setShowEditorBilling] = useUiPref("showEditorBilling");
   const [showLogs, setShowLogs] = useUiPref("showLogs");
+  const [showIdeasBoard, setShowIdeasBoard] = useUiPref("showIdeasBoard");
 
   const [status, setStatus] = useState<StatusMap | null>(null);
 
@@ -269,10 +270,17 @@ export default function SettingsPage() {
           <div>
             <div className="mb-2 text-sm font-medium">Optional sections</div>
             <p className="mb-2 text-xs text-muted-foreground">
-              Power-user surfaces that stay hidden by default. Flip them on if
-              you need them.
+              Parts of the app you can hide if they don&apos;t fit how you work.
+              Nothing here is deleted — turning one back on restores it with
+              whatever was in it.
             </p>
             <div className="space-y-2">
+              <ToggleRow
+                label="Ideas board"
+                description="Show the Board tab in Ideation. It's a kanban for moving ideas through scripting, editing and publishing — worth having if a team works in the app with you, and mostly dead weight if you plan alone or already use Trello or Notion. Your cards are kept either way."
+                value={showIdeasBoard}
+                onChange={setShowIdeasBoard}
+              />
               <ToggleRow
                 label="Editor billing card"
                 description="Show the editor payouts widget on the Dashboard. Useful only if you pay an editor per video."
