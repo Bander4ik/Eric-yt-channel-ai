@@ -195,9 +195,9 @@ This is what lets the app pull real Analytics data (views over time, retention, 
      - `https://www.googleapis.com/auth/yt-analytics-monetary.readonly`
      - `https://www.googleapis.com/auth/youtube.readonly`
    - **Save and continue**.
-   - **Test users** → **Add users** → add the email of every Google account that owns a YouTube channel you'll be analyzing. **Save and continue → Back to dashboard**.
+   - **Audience** → click **Publish app** so the publishing status reads **In production**. Confirm the dialog. **You can skip the Test users list entirely** — it only applies to apps left in **Testing**, and Testing is exactly what makes Google drop your connection every 7 days.
 
-   > ⚠️ **If your channel sits on a Brand Account**, don't add the brand account here — it has no login of its own, and Google will reject it with *"Ineligible accounts not added"*. Add the **personal Google account that owns the Brand Account** instead. When you connect it in the app, Google shows a channel picker and you choose the brand channel there.
+   > ⚠️ **If your channel sits on a Brand Account**, the account you sign in with must be the **personal Google account that owns the Brand Account** — a Brand Account has no login of its own. When you connect it in the app, Google shows a channel picker and you choose the brand channel there.
    >
    > **Editor or Manager access is not enough.** Google's own rule: *"invited users can't access: YouTube Music, YouTube Kids app, YouTube APIs"* ([source](https://support.google.com/youtube/answer/9481328)). Anyone invited through YouTube channel permissions — any role — is blocked from the API no matter what they can see in Studio. It has to be the owner. You can check who that is in **YouTube Studio → Settings → Permissions**.
 3. **APIs & Services → Credentials → + Create Credentials → OAuth client ID**:
@@ -213,7 +213,9 @@ This is what lets the app pull real Analytics data (views over time, retention, 
 4. In the app: **Integrations** → scroll to **YouTube Analytics (Google OAuth)** → paste **Client ID** and **Client secret** → **Save**.
 5. Then for each channel you've added, click the **Google** button next to it → sign in with the channel's owner account → grant all 3 permissions → page redirects back to the app.
 
-> Token expiry: While your OAuth app is in **Testing** mode (the default), Google forces a re-login every 7 days. The app shows token age and warns you when re-login is due.
+   > Google will show an **"app isn't verified"** screen on the way. That is expected and safe — this is your own app reading your own data, and Google only removes that screen for apps that pass a public review. Click **Advanced → Go to (your app name)**. You do not need verification: Google exempts apps used only by you, or by a few people you know personally.
+
+> Token expiry: the 7-day re-login only happens while your OAuth app's publishing status is **Testing**. Publishing it (step 2, **Audience → Publish app**) removes that clock for good. One catch: the expiry is baked into a token the moment it is issued — so publish **first**, then click **Reconnect** once, otherwise the token you already hold still dies on schedule.
 
 ### 4.5 Apify — OPTIONAL (fallback transcription + competitor scraping)
 
@@ -333,7 +335,9 @@ The transcription engine couldn't find its helper binary. Re-run `install.bat` /
 
 ### "Access blocked: app has not completed verification" (Google OAuth)
 
-The Google account you're trying to sign in with isn't in the **Test users** list. Add it: Google Cloud Console → APIs & Services → OAuth consent screen → Test users → Add.
+Your OAuth app is still in **Testing**, so only listed test users can sign in. The real fix is to publish it: Google Cloud Console → **Google Auth Platform → Audience → Publish app** (status becomes **In production**). That also removes the 7-day re-login. Publishing does not require verification.
+
+Alternative, if you deliberately want to stay in Testing: **Audience → Test users → Add users** → add the Google account you're signing in with. Remember it will then need a re-login every 7 days.
 
 ### App won't start, terminal says "EADDRINUSE"
 

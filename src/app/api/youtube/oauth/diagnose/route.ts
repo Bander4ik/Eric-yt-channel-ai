@@ -57,7 +57,7 @@ export async function GET(req: Request) {
       ok: false,
       stage: "refresh-failed",
       message:
-        "Refresh-token call to Google failed — most likely the user revoked access in their Google account permissions, or refresh tokens have hit the 7-day test-mode expiry. Reconnect.",
+        "Refresh-token call to Google failed — most likely the user revoked access in their Google account permissions, or the Cloud app is still on \"Testing\" and the token hit Google's 7-day limit. Publish the app (Audience → Publish app), then reconnect.",
       detail: err instanceof Error ? err.message : String(err),
       grantedScopes,
       hasMonetaryScope,

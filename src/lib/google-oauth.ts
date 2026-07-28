@@ -12,7 +12,10 @@ import { getSetting, setSetting } from "./db";
  * The user must register this exact URI in their GCP OAuth client config.
  */
 
-// Sensitive scope — requires verified app in production, or 7-day token life in test mode.
+// Sensitive scopes — Google shows an "app isn't verified" interstitial for
+// these unless the app passes public review. Verification is not required for
+// personal/known-users installs like this one; publishing the app (one click,
+// Audience → Publish app) is what removes the 7-day refresh-token life.
 // Note about scopes:
 //   - yt-analytics.readonly        — views, watch time, demographics, traffic sources
 //   - yt-analytics-monetary.readonly — revenue, RPM, CPM (Owner-only at the
@@ -76,6 +79,36 @@ export function clearOAuthConfig(): void {
  */
 function tokensKey(channelId?: string | null): string {
   return channelId ? `google.oauth.tokens.${channelId}` : "google.oauth.tokens";
+}
+
+function issuedAtKey(channelId?: string | null): string {
+  return channelId
+    ? `google.oauth.issuedAt.${channelId}`
+    : "google.oauth.issuedAt";
+}
+
+/**
+ * Sticky "this Cloud project is published" marker — see
+ * `markPublishedIfProven`. Sticky because the proof is an event we only
+ * observe at refresh time; an idle user must not fall back to warnings.
+ */
+function publishedKey(channelId?: string | null): string {
+  return channelId
+    ? `google.oauth.published.${channelId}`
+    : "google.oauth.published";
+}
+
+/**
+ * Google issues 7-day refresh tokens only while the OAuth app's publishing
+ * status is "Testing". So a refresh that SUCCEEDS on a token already older
+ * than 7 days is proof the app is in production — no guessing, no asking the
+ * user what their Cloud console says.
+ */
+function markPublishedIfProven(channelId?: string | null): void {
+  const issued = getSetting(issuedAtKey(channelId));
+  if (!issued) return;
+  const ageDays = (Date.now() / 1000 - parseInt(issued, 10)) / 86400;
+  if (ageDays > 7) setSetting(publishedKey(channelId), "1");
 }
 
 export function getOAuthTokens(channelId?: string | null): OAuthTokens | null {
@@ -233,7 +266,9 @@ export async function refreshAccessToken(channelId?: string | null): Promise<OAu
   // refresh stays per-channel. If we fell back to the global slot,
   // overwrite the global slot.
   const hasPerChannel = !!(channelId && getSetting(tokensKey(channelId)));
-  setOAuthTokens(tokens, hasPerChannel ? channelId : null);
+  const slot = hasPerChannel ? channelId : null;
+  setOAuthTokens(tokens, slot);
+  markPublishedIfProven(slot);
   return tokens;
 }
 
@@ -258,6 +293,10 @@ export type OAuthStatus = {
   perChannel: boolean;
   expiresAt: number | null;
   refreshTokenAgeDays: number | null;
+  /** Observed, not assumed: a refresh succeeded past day 7, which only
+   *  happens once the Cloud app is published. Until it flips, the UI must
+   *  phrase the 7-day expiry conditionally rather than assert it. */
+  publishedProven: boolean;
   scopes: string[];
 };
 
@@ -265,11 +304,9 @@ export function getStatus(channelId?: string | null): OAuthStatus {
   const cfg = getOAuthConfig();
   const perChannelTokens = channelId ? getSetting(tokensKey(channelId)) : null;
   const tokens = getOAuthTokens(channelId);
+  const slot = perChannelTokens ? channelId : null;
   let ageDays: number | null = null;
-  const issuedKey = perChannelTokens
-    ? `google.oauth.issuedAt.${channelId}`
-    : "google.oauth.issuedAt";
-  const issued = getSetting(issuedKey);
+  const issued = getSetting(issuedAtKey(slot));
   if (issued) {
     ageDays = Math.floor((Date.now() / 1000 - parseInt(issued, 10)) / 86400);
   }
@@ -279,23 +316,23 @@ export function getStatus(channelId?: string | null): OAuthStatus {
     perChannel: !!perChannelTokens,
     expiresAt: tokens?.expires_at ?? null,
     refreshTokenAgeDays: ageDays,
+    publishedProven: getSetting(publishedKey(slot)) === "1",
     scopes: tokens?.scope ? tokens.scope.split(" ") : [],
   };
 }
 
 export function markIssuedNow(channelId?: string | null): void {
-  const k = channelId
-    ? `google.oauth.issuedAt.${channelId}`
-    : "google.oauth.issuedAt";
-  setSetting(k, String(Math.floor(Date.now() / 1000)));
+  setSetting(issuedAtKey(channelId), String(Math.floor(Date.now() / 1000)));
 }
 
 export function revokeLocal(channelId?: string | null): void {
   clearOAuthTokens(channelId);
   if (channelId) {
-    setSetting(`google.oauth.issuedAt.${channelId}`, "");
+    setSetting(issuedAtKey(channelId), "");
+    setSetting(publishedKey(channelId), "");
   } else {
-    setSetting("google.oauth.issuedAt", "");
+    setSetting(issuedAtKey(null), "");
+    setSetting(publishedKey(null), "");
     setSetting("google.oauth.state", "");
   }
 }

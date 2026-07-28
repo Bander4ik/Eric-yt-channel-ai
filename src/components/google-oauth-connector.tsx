@@ -31,6 +31,7 @@ type Status = {
   connected: boolean;
   expiresAt: number | null;
   refreshTokenAgeDays: number | null;
+  publishedProven: boolean;
   scopes: string[];
 };
 
@@ -139,7 +140,18 @@ export function GoogleOAuthConnector() {
   const connected = !!status?.connected;
   const configured = !!cfg?.configured;
   const ageDays = status?.refreshTokenAgeDays;
-  const nearExpiry = typeof ageDays === "number" && ageDays >= 5; // test-mode refresh tokens die at 7 days
+  // The 7-day clock only exists for apps left on "Testing". Once a refresh
+  // has proven the app is published we say nothing at all — an evergreen
+  // "reconnect soon" on a healthy connection just teaches people to ignore us.
+  const published = !!status?.publishedProven;
+  const ageNote = !published && typeof ageDays === "number" && ageDays > 7
+    ? t.googleOAuth.likelyExpired
+    : !published && typeof ageDays === "number" && ageDays >= 5
+      ? t.googleOAuth.stillTesting
+      : published
+        ? t.googleOAuth.publishedNoExpiry
+        : null;
+  const warn = !published && typeof ageDays === "number" && ageDays >= 5;
 
   return (
     <Card id="youtube-analytics">
@@ -207,8 +219,8 @@ export function GoogleOAuthConnector() {
               {t.googleOAuth.tipManagerLimitations}
             </li>
             <li>
-              <strong className="text-foreground">Test users:</strong>{" "}
-              {t.googleOAuth.tipTestUsers}
+              <strong className="text-foreground">The &quot;app isn&apos;t verified&quot; screen:</strong>{" "}
+              {t.googleOAuth.tipUnverifiedScreen}
             </li>
             <li>
               <strong className="text-foreground">Where scopes live:</strong>{" "}
@@ -327,9 +339,9 @@ export function GoogleOAuthConnector() {
               <span className="font-medium">{t.googleOAuth.activeSession}</span>
             </div>
             {typeof ageDays === "number" && (
-              <div className={nearExpiry ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
+              <div className={warn ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
                 {t.googleOAuth.refreshAge.replace("{n}", String(ageDays))}
-                {nearExpiry && ` · ${t.googleOAuth.reconnectSoon}`}
+                {ageNote && ` ${ageNote}`}
               </div>
             )}
             {status.scopes.length > 0 && (

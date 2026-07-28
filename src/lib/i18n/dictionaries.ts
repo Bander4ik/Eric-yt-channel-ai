@@ -389,13 +389,17 @@ type DictionaryShape = {
     errorPrefix: string;
     activeSession: string;
     refreshAge: string;
-    reconnectSoon: string;
+    /** Shown only while we cannot yet prove the app was published — the
+     *  7-day clock exists solely for apps left in "Testing". */
+    stillTesting: string;
+    publishedNoExpiry: string;
+    likelyExpired: string;
     scopesLabel: string;
     // Extended tips for shared-channel / Brand Account scenarios.
     tipsTitle: string;
     tipBrandAccount: string;
     tipManagerLimitations: string;
-    tipTestUsers: string;
+    tipUnverifiedScreen: string;
     tipWhereScopes: string;
     tipRefreshTokenExpiry: string;
   };
@@ -840,7 +844,7 @@ export const dictionaries: { en: DictionaryShape } = {
       howStep3:
         "Credentials → Create credentials → OAuth 2.0 Client ID → \"Web application\". Under \"Authorised redirect URIs\" add:",
       howStep4:
-        "Google Auth Platform → Audience → Test users → add the Google email you'll log in with (yours, or your boss's if that's whose channel you're analysing). Publishing status stays \"Testing\".",
+        "Google Auth Platform → Audience → click \"Publish app\" so the status reads \"In production\". Leave the Test users list alone — it only applies to apps in Testing, and Testing is what makes Google drop your connection every 7 days.",
       howStep5:
         "Google Auth Platform → Data Access → Add scopes. Paste: youtube.readonly, yt-analytics.readonly, yt-analytics-monetary.readonly. Save.",
       openConsole: "Open Google Cloud Console",
@@ -856,21 +860,25 @@ export const dictionaries: { en: DictionaryShape } = {
       connectedJustNow: "Connected to Google successfully.",
       errorPrefix: "OAuth error",
       activeSession: "Active Google session",
-      refreshAge:
-        "Refresh token is {n} days old (Google test mode expires tokens after 7 days).",
-      reconnectSoon: "reconnect soon",
+      refreshAge: "Connected {n} days ago.",
+      stillTesting:
+        "If this app is still set to \"Testing\" in Google Cloud, Google will drop this connection at 7 days. Publish it (Audience → Publish app) and that stops for good.",
+      publishedNoExpiry:
+        "This connection has outlived Google's 7-day Testing limit, so your app is published — it won't expire on a schedule any more.",
+      likelyExpired:
+        "If this app is still in \"Testing\", this connection has passed Google's 7-day limit and analytics will fail until you reconnect. Publishing the app (Audience → Publish app) stops this happening again.",
       scopesLabel: "Scopes",
       tipsTitle: "Important tips (real-world scenarios)",
       tipBrandAccount:
         "If you are analysing someone else's channel (e.g. your boss's), they need to add your email as a Manager under YouTube Studio → Settings → Permissions. This only works for Brand Accounts — personal channels must either be converted to Brand, or the owner logs in once on your machine.",
       tipManagerLimitations:
         "Manager-level access gives you views, watch time, demographics, traffic sources, retention. It does NOT give revenue/RPM/earnings — those require Owner. If you need revenue data, the owner must either make you an Owner or log in themselves.",
-      tipTestUsers:
-        "The account you click \"Connect\" with must be in the Test users list (see step 4). If you sign in with a different account you'll get \"Access blocked: app has not completed verification\".",
+      tipUnverifiedScreen:
+        "When you connect, Google shows an \"app isn't verified\" screen. That is expected — this app reads private YouTube data, and Google only removes that screen for apps that pass a public review. Click \"Advanced\" → \"Go to (your app name)\". You do not need to pass verification: Google exempts apps used only by you, or by a few people you know personally.",
       tipWhereScopes:
-        "In Google's new Cloud Console UI, scopes are under \"Data Access\" (not \"OAuth consent screen → Scopes\" like the old docs say). Test users moved to \"Audience\".",
+        "In Google's new Cloud Console UI, scopes live under \"Data Access\", not \"OAuth consent screen → Scopes\" like older guides say. \"Publish app\" and the Test users list are both under \"Audience\".",
       tipRefreshTokenExpiry:
-        "In Testing mode, Google expires refresh tokens after 7 days. When you see the amber \"reconnect soon\" hint below, just click Reconnect — your saved scopes stay, only the tokens refresh.",
+        "The 7-day expiry applies only while your app's publishing status is \"Testing\". Publishing removes that clock. One catch: the expiry is baked into a token the moment it is issued, so publish FIRST and then click Reconnect once — otherwise the token you already have still dies on schedule.",
     },
   },
 };

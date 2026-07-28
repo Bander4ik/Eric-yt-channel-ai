@@ -73,11 +73,13 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
   const [boundChannels, setBoundChannels] = useState<BoundChannel[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pendingChannelId, setPendingChannelId] = useState<string | null>(null);
-  // Per-channel OAuth status: { [channelId]: { connected, perChannel, refreshTokenAgeDays } }
-  // refreshTokenAgeDays is critical for test-mode setups where each channel
-  // is connected via its own un-verified Google Cloud OAuth client — those
-  // refresh tokens expire after 7 days, so we surface "needs re-login"
-  // hints per row instead of only at the bottom of the OAuth panel.
+  // Per-channel OAuth status: { [channelId]: { connected, perChannel,
+  // refreshTokenAgeDays, publishedProven } }
+  // A Cloud app left on "Testing" expires refresh tokens after 7 days, and a
+  // channel wired to its own Cloud project can die on its own schedule — so we
+  // surface the hint per row, not only at the bottom of the OAuth panel.
+  // publishedProven tells us the app was published (one click, no verification
+  // needed), in which case there is no clock and we stay quiet.
   const [oauthByChannel, setOauthByChannel] = useState<
     Record<
       string,
@@ -85,6 +87,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
         connected: boolean;
         perChannel: boolean;
         refreshTokenAgeDays: number | null;
+        publishedProven: boolean;
       }
     >
   >({});
@@ -121,6 +124,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
           connected: boolean;
           perChannel: boolean;
           refreshTokenAgeDays: number | null;
+          publishedProven?: boolean;
         }[];
       };
       const map: Record<
@@ -129,6 +133,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
           connected: boolean;
           perChannel: boolean;
           refreshTokenAgeDays: number | null;
+          publishedProven: boolean;
         }
       > = {};
       for (const c of oauth.channels ?? []) {
@@ -136,6 +141,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
           connected: c.connected,
           perChannel: c.perChannel,
           refreshTokenAgeDays: c.refreshTokenAgeDays ?? null,
+          publishedProven: !!c.publishedProven,
         };
       }
       setOauthByChannel(map);
@@ -453,6 +459,9 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
                               ageDays={
                                 oauthByChannel[c.id]?.refreshTokenAgeDays ?? null
                               }
+                              publishedProven={
+                                !!oauthByChannel[c.id]?.publishedProven
+                              }
                             />
                           </>
                         ) : (
@@ -676,52 +685,68 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
 /**
  * Tiny status pill showing how old the channel's Google refresh token is.
  *
- * Why this matters: in Google Cloud "Testing" mode (which everyone is on
- * until they verify their app — and Luka uses a separate Cloud project
- * per channel by design, so verification isn't realistic), refresh
- * tokens silently expire after 7 days. Once that happens analytics
- * starts 403'ing and the user has no idea why until they scroll down to
- * the bottom of /settings and see the "Active Google session"
- * panel.
+ * Why this matters: Google expires refresh tokens after 7 days only while
+ * the Cloud app's publishing status is "Testing". Publishing is one click
+ * (Audience → Publish app) and does NOT require passing verification, so
+ * the healthy end state is a connection that never expires. Users who wire
+ * each channel to its own Cloud project can still leave one project on
+ * Testing, which is why the chip exists at all.
  *
- * The chip surfaces that info per row so the user can spot which
- * channels are about to die before they actually do:
- *   0-3 days  → silent (fresh, nothing to do)
- *   4-5 days  → amber "Xd old" — re-login soon-ish
- *   6+ days   → red "Xd old, re-login" — about to expire / already dead
+ * We never assert the expiry as fact — `publishedProven` is the observed
+ * proof (a refresh that succeeded past day 7); until it arrives the wording
+ * stays conditional, and once it does we go quiet rather than cry wolf:
+ *   published        → neutral "token Xd", no warning at any age
+ *   0-4 days         → neutral "token Xd"
+ *   5-7 days         → soft amber, "if still in Testing…"
+ *   8+ days          → stronger amber, "if still in Testing…"
  *
- * `ageDays` is the value returned by getStatus().refreshTokenAgeDays —
- * which is null when the token was issued before we started tracking
- * issuedAt. In that case we just skip the chip rather than guess.
+ * `ageDays` is getStatus().refreshTokenAgeDays — null when the token
+ * predates issuedAt tracking. Then we skip the chip rather than guess.
  */
-function TokenAgeChip({ ageDays }: { ageDays: number | null }) {
+function TokenAgeChip({
+  ageDays,
+  publishedProven,
+}: {
+  ageDays: number | null;
+  publishedProven: boolean;
+}) {
   if (ageDays === null || ageDays < 0) return null;
-  if (ageDays <= 3) {
+  if (publishedProven) {
     return (
       <span
         className="text-muted-foreground"
-        title={`Google refresh token issued ${ageDays}d ago. Test-mode tokens expire after 7d.`}
+        title={`Google refresh token issued ${ageDays}d ago. This app is published, so it has no expiry schedule.`}
       >
         · token {ageDays}d
       </span>
     );
   }
-  if (ageDays <= 5) {
+  if (ageDays < 5) {
     return (
       <span
-        className="inline-flex items-center gap-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
-        title="Google test-mode refresh tokens expire after 7 days. Re-login soon to avoid 403s."
+        className="text-muted-foreground"
+        title={`Google refresh token issued ${ageDays}d ago.`}
       >
-        ⚠ token {ageDays}d — re-login soon
+        · token {ageDays}d
+      </span>
+    );
+  }
+  if (ageDays <= 7) {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+        title="If this app is still set to Testing in Google Cloud, Google drops the connection at 7 days. Publishing it (Audience → Publish app) stops that for good."
+      >
+        ⚠ token {ageDays}d
       </span>
     );
   }
   return (
     <span
-      className="inline-flex items-center gap-0.5 rounded bg-red-500/15 px-1.5 py-0.5 font-medium text-red-700 dark:text-red-400"
-      title="Google test-mode refresh tokens expire after 7 days. This token is at or past the expiry — analytics will 403 until you re-login."
+      className="inline-flex items-center gap-0.5 rounded bg-amber-500/20 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+      title="If this app is still set to Testing in Google Cloud, this token has passed the 7-day limit and analytics will fail until you reconnect. Publishing the app (Audience → Publish app) stops this happening again."
     >
-      ✗ token {ageDays}d — re-login required
+      ⚠ token {ageDays}d — reconnect if analytics fail
     </span>
   );
 }
