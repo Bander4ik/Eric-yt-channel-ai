@@ -62,8 +62,8 @@ type Hook = {
   score_pacing: number;
   score_benefit: number;
   overall_score: number;
-  fortalezas: string | null;
-  mejoras: string | null;
+  strengths: string | null;
+  improvements: string | null;
   analyzed_at: number;
   analyzer_model: string | null;
   title: string;
@@ -805,20 +805,20 @@ function HookCard({
   reanalyzing: boolean;
   onReanalyze: () => void;
 }) {
-  const fortalezas = useMemo<string[]>(() => {
+  const strengths = useMemo<string[]>(() => {
     try {
-      return JSON.parse(hook.fortalezas ?? "[]");
+      return JSON.parse(hook.strengths ?? "[]");
     } catch {
       return [];
     }
-  }, [hook.fortalezas]);
-  const mejoras = useMemo<string[]>(() => {
+  }, [hook.strengths]);
+  const improvements = useMemo<string[]>(() => {
     try {
-      return JSON.parse(hook.mejoras ?? "[]");
+      return JSON.parse(hook.improvements ?? "[]");
     } catch {
       return [];
     }
-  }, [hook.mejoras]);
+  }, [hook.improvements]);
 
   return (
     <Card>
@@ -920,16 +920,16 @@ function HookCard({
             </ul>
           </div>
 
-          {/* Fortalezas + Mejoras */}
+          {/* Strengths + Improvements */}
           <div className="space-y-3">
-            {fortalezas.length > 0 && (
+            {strengths.length > 0 && (
               <div>
                 <h3 className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
                   <CheckCircle2 className="h-3 w-3" />
-                  Fortalezas
+                  Strengths
                 </h3>
                 <ul className="space-y-1 text-xs">
-                  {fortalezas.map((s, i) => (
+                  {strengths.map((s, i) => (
                     <li key={i} className="text-muted-foreground">
                       • {s}
                     </li>
@@ -937,14 +937,14 @@ function HookCard({
                 </ul>
               </div>
             )}
-            {mejoras.length > 0 && (
+            {improvements.length > 0 && (
               <div>
                 <h3 className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                   <AlertCircle className="h-3 w-3" />
-                  Mejoras sugeridas
+                  Suggested improvements
                 </h3>
                 <ul className="space-y-1 text-xs">
-                  {mejoras.map((s, i) => (
+                  {improvements.map((s, i) => (
                     <li key={i} className="text-muted-foreground">
                       • {s}
                     </li>

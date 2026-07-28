@@ -34,8 +34,8 @@ import { log } from "./logger";
  *        - identification: does the viewer see themselves in the setup?
  *        - pacing: short, punchy sentences early on?
  *        - benefit: is the "what's in it for me" telegraphed by 60s?
- *   3. Surface 2-3 strengths (fortalezas) and 2-3 improvement ideas
- *      (mejoras) so the user gets actionable feedback per video.
+ *   3. Surface 2-3 strengths and 2-3 improvement ideas so the user gets
+ *      actionable feedback per video.
  *
  * Output is strict JSON — we parse it and persist into the video_hooks
  * table. One call per video; the batch endpoint handles the iteration so
@@ -69,8 +69,8 @@ Your output MUST be a single valid JSON object with this exact schema, and nothi
     "pacing": integer 1-10,
     "benefit": integer 1-10
   },
-  "fortalezas": [string, string, string]   // 2-3 specific strengths, each 5-15 words
-  "mejoras": [string, string, string]      // 2-3 specific improvements, each 5-15 words
+  "strengths": [string, string, string]   // 2-3 specific strengths, each 5-15 words
+  "improvements": [string, string, string]      // 2-3 specific improvements, each 5-15 words
 }
 
 Formula definitions:
@@ -93,7 +93,7 @@ Be tough. Most hooks score 5-7 on most dimensions. A 10 is rare. Calibrate to ch
 
 Strengths and improvements MUST cite specific elements of the hook text — quoting a phrase or pointing at a concrete moment. Generic advice ("be more specific") is forbidden; say WHICH part to make specific.
 
-Match the language of the source hook in your fortalezas/mejoras strings (English hooks → English feedback, Ukrainian → Ukrainian, etc.).`;
+Match the language of the source hook in your strengths/improvements strings (English hooks → English feedback, Ukrainian → Ukrainian, etc.).`;
 
 export class HookAnalyzerError extends Error {
   constructor(message: string) {
@@ -113,8 +113,8 @@ type AnalyzerOutput = {
     pacing: number;
     benefit: number;
   };
-  fortalezas: string[];
-  mejoras: string[];
+  strengths: string[];
+  improvements: string[];
 };
 
 /**
@@ -160,8 +160,8 @@ function validateOutput(parsed: unknown): AnalyzerOutput {
       throw new HookAnalyzerError(`Bad score for ${k}: ${v}`);
     }
   }
-  const fort = Array.isArray(p.fortalezas) ? (p.fortalezas as string[]) : [];
-  const mej = Array.isArray(p.mejoras) ? (p.mejoras as string[]) : [];
+  const fort = Array.isArray(p.strengths) ? (p.strengths as string[]) : [];
+  const mej = Array.isArray(p.improvements) ? (p.improvements as string[]) : [];
   return {
     formula_type: formula as HookFormula,
     scores: {
@@ -173,8 +173,8 @@ function validateOutput(parsed: unknown): AnalyzerOutput {
       pacing: Math.round(scores.pacing as number),
       benefit: Math.round(scores.benefit as number),
     },
-    fortalezas: fort.filter((s) => typeof s === "string").slice(0, 5),
-    mejoras: mej.filter((s) => typeof s === "string").slice(0, 5),
+    strengths: fort.filter((s) => typeof s === "string").slice(0, 5),
+    improvements: mej.filter((s) => typeof s === "string").slice(0, 5),
   };
 }
 
@@ -330,8 +330,8 @@ export async function analyzeVideoHook(
     score_pacing: parsed.scores.pacing,
     score_benefit: parsed.scores.benefit,
     overall_score: Math.round(overallScore * 10) / 10,
-    fortalezas: JSON.stringify(parsed.fortalezas),
-    mejoras: JSON.stringify(parsed.mejoras),
+    strengths: JSON.stringify(parsed.strengths),
+    improvements: JSON.stringify(parsed.improvements),
     analyzer_model: providerModelId(resolved.provider),
     analyzed_at: Math.floor(Date.now() / 1000),
   });

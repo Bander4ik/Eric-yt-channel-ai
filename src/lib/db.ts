@@ -4004,8 +4004,8 @@ db.exec(`
     score_benefit INTEGER NOT NULL,
     overall_score REAL NOT NULL,
     -- Free-form strengths + improvement suggestions from the analyzer.
-    fortalezas TEXT,
-    mejoras TEXT,
+    strengths TEXT,
+    improvements TEXT,
     analyzed_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     analyzer_model TEXT,
     FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
@@ -4026,8 +4026,8 @@ export type VideoHook = {
   score_pacing: number;
   score_benefit: number;
   overall_score: number;
-  fortalezas: string | null; // JSON array
-  mejoras: string | null;    // JSON array
+  strengths: string | null; // JSON array
+  improvements: string | null;    // JSON array
   analyzed_at: number;
   analyzer_model: string | null;
 };
@@ -4038,7 +4038,7 @@ export function upsertVideoHook(h: VideoHook): void {
        (video_id, hook_text, formula_type,
         score_open_loop, score_value_promise, score_conflict, score_specific_language,
         score_identification, score_pacing, score_benefit, overall_score,
-        fortalezas, mejoras, analyzed_at, analyzer_model)
+        strengths, improvements, analyzed_at, analyzer_model)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'), ?)
      ON CONFLICT(video_id) DO UPDATE SET
        hook_text = excluded.hook_text,
@@ -4051,8 +4051,8 @@ export function upsertVideoHook(h: VideoHook): void {
        score_pacing = excluded.score_pacing,
        score_benefit = excluded.score_benefit,
        overall_score = excluded.overall_score,
-       fortalezas = excluded.fortalezas,
-       mejoras = excluded.mejoras,
+       strengths = excluded.strengths,
+       improvements = excluded.improvements,
        analyzed_at = strftime('%s','now'),
        analyzer_model = excluded.analyzer_model`
   ).run(
@@ -4067,8 +4067,8 @@ export function upsertVideoHook(h: VideoHook): void {
     h.score_pacing,
     h.score_benefit,
     h.overall_score,
-    h.fortalezas ?? null,
-    h.mejoras ?? null,
+    h.strengths ?? null,
+    h.improvements ?? null,
     h.analyzer_model ?? null
   );
 }
@@ -5532,6 +5532,27 @@ try {
     db.exec(
       `ALTER TABLE thumbnail_style_profiles ADD COLUMN window_widened INTEGER NOT NULL DEFAULT 0`
     );
+  }
+} catch {
+  /* noop -- table may not exist yet on a brand-new DB */
+}
+
+// The video_hooks table originally shipped with Spanish column names
+// (`fortalezas` / `mejoras`) left over from the original author. Rename
+// them to English so the app never round-trips Spanish identifiers
+// through the LLM prompt, the chat tool output, or the UI. Existing
+// analyzed data is preserved via RENAME COLUMN rather than a drop/recreate.
+try {
+  const hookCols = (
+    db.prepare(`PRAGMA table_info(video_hooks)`).all() as {
+      name: string;
+    }[]
+  ).map((c) => c.name);
+  if (hookCols.includes("fortalezas")) {
+    db.exec(`ALTER TABLE video_hooks RENAME COLUMN fortalezas TO strengths`);
+  }
+  if (hookCols.includes("mejoras")) {
+    db.exec(`ALTER TABLE video_hooks RENAME COLUMN mejoras TO improvements`);
   }
 } catch {
   /* noop -- table may not exist yet on a brand-new DB */

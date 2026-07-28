@@ -1026,8 +1026,8 @@ export async function runTool(name: string, input: ToolInput): Promise<ToolResul
               pacing: h.score_pacing,
               benefit: h.score_benefit,
             },
-            fortalezas: h.fortalezas,
-            mejoras: h.mejoras,
+            strengths: h.strengths,
+            improvements: h.improvements,
           })),
         };
       }
@@ -1392,7 +1392,7 @@ export function buildSystemPrompt(
     `## Strategy tools — the platform's own analysis surfaces (free, instant)`,
     `These mirror every analytical page the user sees. If the user asks about Hook Lab, Formula Analyzer, Competitor Alerts etc — read from these tools rather than guessing.`,
     `- **\`get_hook_stats\`** — channel-wide Hook Lab summary: how many hooks analysed, average score, winning hook formula on this channel, per-formula avg views. Answers "what kind of hook works best for me".`,
-    `- **\`list_hook_breakdowns\`** *(orderBy: score|views|recent)* — every analysed video with its 7 dimension scores + fortalezas (strengths) + mejoras (improvements). Use after get_hook_stats when the user wants to see specific examples or fix the lowest-scoring hooks.`,
+    `- **\`list_hook_breakdowns\`** *(orderBy: score|views|recent)* — every analysed video with its 7 dimension scores + strengths + improvements. Use after get_hook_stats when the user wants to see specific examples or fix the lowest-scoring hooks.`,
     `- **\`get_video_hook\`** *(videoId)* — full hook analysis for one video.`,
     `- **\`get_formula_breakdown\`** — Formula Analyzer payload: per-word avg views + success rate (≥1.5× channel median), title-length buckets, top 10 vs bottom 10 video titles by views. Use for any "what's working in my titles" question.`,
     `- **\`get_comment_analysis\`** *(videoId)* — the cached per-video AI comment analysis (sentiment 1-10, top themes, audience objections, future-video ideas with demand level, best hook candidates the audience surfaced). If the user hasn't run it yet, the tool returns a "no analysis yet" error — relay that and tell them to open the Comments tab on the video and click "Analyse with AI".`,

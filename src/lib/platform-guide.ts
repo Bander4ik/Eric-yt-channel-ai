@@ -135,7 +135,7 @@ video that has a transcript.
   provocation, other.
 - **7 quality scores (1-10)** — open_loop, value_promise, conflict,
   specific_language, identification, pacing, benefit.
-- **Strengths (fortalezas)** and **improvement ideas (mejoras)**.
+- **Strengths** and **improvement ideas**.
 
 ## How to use it
 - **"Analyze N pending" button** — runs the AI analyser over every
