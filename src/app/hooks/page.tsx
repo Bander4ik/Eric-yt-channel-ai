@@ -12,6 +12,8 @@ import {
   RotateCw,
   BookmarkPlus,
   Check,
+  BookOpen,
+  Copy,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -88,7 +90,78 @@ type Dashboard = {
   pending: number;
 };
 
-type Tab = "dashboard" | "rankings" | "cards";
+type Tab = "dashboard" | "rankings" | "cards" | "playbook";
+
+type Playbook = {
+  channel_read: string;
+  verdict: string;
+  recurring_problems: Array<{
+    theme: string;
+    detail: string;
+    affected: number;
+    example: string;
+  }>;
+  reliable_strengths: Array<{
+    theme: string;
+    detail: string;
+    affected: number;
+  }>;
+  prompt_block: string;
+};
+
+type PlaybookFacts = {
+  dimensions: {
+    n: number;
+    open_loop: number | null;
+    value_promise: number | null;
+    conflict: number | null;
+    specific_language: number | null;
+    identification: number | null;
+    pacing: number | null;
+    benefit: number | null;
+  };
+  formulas: Array<{
+    formula: Formula;
+    count: number;
+    avgViews: number;
+    avgScore: number;
+  }>;
+  scoreVsViews: {
+    aboveMedianAvgViews: number | null;
+    belowMedianAvgViews: number | null;
+    n: number;
+  };
+  overall: {
+    analyzed: number;
+    totalVideos: number;
+    avgScore: number;
+    topFormula: Formula | null;
+  };
+};
+
+type PlaybookResponse = {
+  playbook: { playbook: Playbook; facts: PlaybookFacts } | null;
+  model: string | null;
+  generatedAt: number | null;
+  hooksAnalyzedAtGeneration: number | null;
+  hooksAnalyzed: number;
+};
+
+const DIMENSION_LABEL: Record<
+  keyof Omit<PlaybookFacts["dimensions"], "n">,
+  string
+> = {
+  open_loop: "Open loop",
+  value_promise: "Value promise",
+  conflict: "Conflict",
+  specific_language: "Specific language",
+  identification: "Identification",
+  pacing: "Pacing",
+  benefit: "Benefit",
+};
+
+/** Playbooks need real sample size — mirrors MIN_HOOKS in hook-playbook.ts. */
+const MIN_PLAYBOOK_HOOKS = 5;
 
 const FORMULA_LABEL: Record<Formula, string> = {
   direct_question: "Direct Question",
@@ -191,6 +264,48 @@ export default function HooksPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // The playbook lives on its own endpoint and its own refresh cycle —
+  // generating it is a multi-second AI call, so it must not be coupled to
+  // the cheap dashboard/rankings reload that runs on every sort change.
+  const [playbook, setPlaybook] = useState<PlaybookResponse | null>(null);
+  const [playbookError, setPlaybookError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const refreshPlaybook = useCallback(async () => {
+    try {
+      const r = await fetch("/api/hooks/playbook", { cache: "no-store" });
+      setPlaybook((await r.json()) as PlaybookResponse);
+    } catch (e) {
+      setPlaybookError(e instanceof Error ? e.message : "failed to load");
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshPlaybook();
+  }, [refreshPlaybook]);
+
+  const generatePlaybook = async () => {
+    setPlaybookError(null);
+    setGenerating(true);
+    try {
+      const r = await fetch("/api/hooks/playbook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(provider ? { provider } : {}),
+      });
+      const d = (await r.json()) as { error?: string };
+      // Surface the server's own message verbatim — it carries the
+      // "only 3 hooks analysed" refusal and raw provider errors (empty
+      // credit balance, bad key) the user needs to act on.
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
+      await refreshPlaybook();
+    } catch (e) {
+      setPlaybookError(e instanceof Error ? e.message : "failed");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   // Kick off a background batch and let HookAnalysisBanner take over
   // the progress UI. We don't `await` the work itself — the endpoint
@@ -389,6 +504,10 @@ export default function HooksPage() {
         <TabButton active={tab === "cards"} onClick={() => setTab("cards")}>
           <Trophy className="h-3.5 w-3.5" />
           Video Cards
+        </TabButton>
+        <TabButton active={tab === "playbook"} onClick={() => setTab("playbook")}>
+          <BookOpen className="h-3.5 w-3.5" />
+          Playbook
         </TabButton>
       </div>
 
@@ -601,6 +720,346 @@ export default function HooksPage() {
           )}
         </div>
       )}
+
+      {/* ===== PLAYBOOK ===== */}
+      {tab === "playbook" && (
+        <PlaybookTab
+          data={playbook}
+          error={playbookError}
+          generating={generating}
+          onGenerate={generatePlaybook}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Consolidates every per-video hook analysis into one diagnosis plus a
+ * paste-ready block of rules for the user's script-writing prompt. The
+ * point of the tab is that reading 240 individual suggestions is not
+ * something anyone actually does.
+ */
+function PlaybookTab({
+  data,
+  error,
+  generating,
+  onGenerate,
+}: {
+  data: PlaybookResponse | null;
+  error: string | null;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copyPromptBlock = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard denied — the text is on screen and selectable anyway */
+    }
+  };
+
+  const errorBanner = error ? (
+    <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      {error}
+    </div>
+  ) : null;
+
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading…
+      </div>
+    );
+  }
+
+  const stored = data.playbook;
+  const notEnough = data.hooksAnalyzed < MIN_PLAYBOOK_HOOKS;
+
+  // ---- Empty state --------------------------------------------------
+  if (!stored) {
+    return (
+      <div className="space-y-3">
+        {errorBanner}
+        <Card>
+          <CardContent className="space-y-4 py-10 text-center">
+            <BookOpen className="mx-auto h-8 w-8 text-muted-foreground" />
+            <div className="mx-auto max-w-lg space-y-2 text-sm text-muted-foreground">
+              <p>
+                The Playbook reads every hook analysis on this channel at
+                once and turns them into one diagnosis — the problems that
+                keep repeating, the strengths worth protecting — instead of
+                a few hundred separate suggestions spread across cards.
+              </p>
+              <p>
+                It ends with a block of rules you can paste straight into
+                the prompt you write scripts with, built from this
+                channel&rsquo;s own numbers.
+              </p>
+            </div>
+            {/* Prose that mixes in values is built as one template string,
+                not interleaved JSX: interleaving here silently dropped an
+                inter-word space at compile time — invisible in review,
+                visible on screen. */}
+            {notEnough ? (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                {`Only ${data.hooksAnalyzed} hook${
+                  data.hooksAnalyzed === 1 ? "" : "s"
+                } analyzed so far. The Playbook needs at least ${MIN_PLAYBOOK_HOOKS} to find real patterns — use the “Analyze pending” button at the top of this page first.`}
+              </p>
+            ) : (
+              <Button onClick={onGenerate} disabled={generating} className="gap-1.5">
+                {generating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                {generating
+                  ? "Building playbook…"
+                  : `Generate from ${data.hooksAnalyzed} hooks`}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ---- Generated playbook -------------------------------------------
+  const { playbook: pb, facts } = stored;
+  const dims = facts.dimensions;
+  const dimEntries = (
+    Object.keys(DIMENSION_LABEL) as Array<keyof typeof DIMENSION_LABEL>
+  )
+    .map((k) => ({ key: k, value: dims[k] }))
+    .filter((d): d is { key: keyof typeof DIMENSION_LABEL; value: number } =>
+      typeof d.value === "number"
+    );
+  const weakest = dimEntries.reduce<typeof dimEntries[number] | null>(
+    (min, d) => (min === null || d.value < min.value ? d : min),
+    null
+  );
+  const strongest = dimEntries.reduce<typeof dimEntries[number] | null>(
+    (max, d) => (max === null || d.value > max.value ? d : max),
+    null
+  );
+  const topFormula = facts.formulas[0] ?? null;
+  // How much better the winning formula does than the channel's own
+  // average — "1.0x" would mean the winner isn't actually winning.
+  const channelAvgViews =
+    facts.formulas.length > 0
+      ? facts.formulas.reduce((s, f) => s + f.avgViews * f.count, 0) /
+        Math.max(
+          1,
+          facts.formulas.reduce((s, f) => s + f.count, 0)
+        )
+      : 0;
+  const topMultiple =
+    topFormula && channelAvgViews > 0
+      ? topFormula.avgViews / channelAvgViews
+      : null;
+
+  const svv = facts.scoreVsViews;
+  // "Meaningfully higher" = at least 15% above. Below that the split is
+  // noise on catalogues this size, and telling the user the analyzer's
+  // scores predict views would be selling them a correlation we can't see.
+  const scoreTracksViews =
+    svv.aboveMedianAvgViews !== null &&
+    svv.belowMedianAvgViews !== null &&
+    svv.aboveMedianAvgViews >= svv.belowMedianAvgViews * 1.15;
+  const showCaution =
+    svv.aboveMedianAvgViews !== null &&
+    svv.belowMedianAvgViews !== null &&
+    !scoreTracksViews;
+
+  const newSince =
+    data.hooksAnalyzedAtGeneration !== null
+      ? data.hooksAnalyzed - data.hooksAnalyzedAtGeneration
+      : 0;
+
+  return (
+    <div className="space-y-4">
+      {errorBanner}
+
+      {/* Provenance + regenerate */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs text-muted-foreground">
+          {`Generated from ${data.hooksAnalyzedAtGeneration ?? "?"} hooks · ${
+            data.generatedAt ? fmtDate(data.generatedAt) : "—"
+          } · ${data.model ?? "unknown model"}`}
+          {newSince > 0 && (
+            <span className="ml-2 text-amber-600 dark:text-amber-400">
+              {`${newSince} newer hook${
+                newSince === 1 ? "" : "s"
+              } analyzed since — regenerate to include them.`}
+            </span>
+          )}
+        </div>
+        <Button
+          onClick={onGenerate}
+          disabled={generating}
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+        >
+          {generating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RotateCw className="h-3.5 w-3.5" />
+          )}
+          {generating ? "Building playbook…" : "Regenerate"}
+        </Button>
+      </div>
+
+      {/* channel_read — labelled so the user can catch a misread channel
+          before trusting any rule built on top of it. */}
+      <Card>
+        <CardContent className="p-4">
+          <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            How the AI read this channel — check this first
+          </h2>
+          <p className="text-sm">{pb.channel_read}</p>
+        </CardContent>
+      </Card>
+
+      {/* verdict */}
+      <Card className="border-primary/40">
+        <CardContent className="p-4">
+          <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Verdict
+          </h2>
+          <p className="text-sm leading-relaxed">{pb.verdict}</p>
+        </CardContent>
+      </Card>
+
+      {/* Diagnosis strip — pure SQL, no AI. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Kpi
+          label="Weakest dimension"
+          value={weakest ? DIMENSION_LABEL[weakest.key] : "—"}
+          hint={weakest ? `${weakest.value.toFixed(1)} / 10 average` : ""}
+        />
+        <Kpi
+          label="Strongest dimension"
+          value={strongest ? DIMENSION_LABEL[strongest.key] : "—"}
+          hint={strongest ? `${strongest.value.toFixed(1)} / 10 average` : ""}
+        />
+        <Kpi
+          label="Winning formula"
+          value={topFormula ? FORMULA_LABEL[topFormula.formula] : "—"}
+          hint={
+            topFormula
+              ? `${fmtCount(topFormula.avgViews)} avg views${
+                  topMultiple ? ` · ${topMultiple.toFixed(1)}× channel avg` : ""
+                }`
+              : ""
+          }
+        />
+      </div>
+
+      {showCaution && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            {`On this channel, hook score has not tracked views so far: higher-scoring hooks averaged ${fmtCount(
+              svv.aboveMedianAvgViews
+            )} views against ${fmtCount(
+              svv.belowMedianAvgViews
+            )} for the lower-scoring half (n=${svv.n}). Treat the rules below as hypotheses to test, not proven wins.`}
+          </span>
+        </div>
+      )}
+
+      {/* Recurring problems */}
+      <Card>
+        <CardContent className="p-4">
+          <h2 className="mb-3 text-sm font-semibold">
+            What keeps going wrong
+          </h2>
+          <ul className="space-y-3">
+            {pb.recurring_problems.map((p, i) => (
+              <li key={i} className="border-l-2 border-rose-500/50 pl-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium">{p.theme}</span>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                    {`${p.affected} of ${data.hooksAnalyzedAtGeneration ?? "?"} hooks`}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">{p.detail}</p>
+                {p.example && (
+                  <p className="mt-1 text-xs italic text-muted-foreground/80">
+                    &ldquo;{p.example}&rdquo;
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      {/* Reliable strengths */}
+      {pb.reliable_strengths.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <h2 className="mb-3 text-sm font-semibold">
+              What already works — don&rsquo;t lose it
+            </h2>
+            <ul className="space-y-3">
+              {pb.reliable_strengths.map((s, i) => (
+                <li key={i} className="border-l-2 border-emerald-500/50 pl-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium">{s.theme}</span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {`${s.affected} of ${data.hooksAnalyzedAtGeneration ?? "?"} hooks`}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {s.detail}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* The deliverable */}
+      <Card className="border-primary/40">
+        <CardContent className="p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">
+                Paste this into your script prompt
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Rules built from this channel&rsquo;s own hook data.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant={copied ? "outline" : "default"}
+              className="shrink-0 gap-1.5"
+              onClick={() => copyPromptBlock(pb.prompt_block)}
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 font-mono text-xs leading-relaxed">
+            {pb.prompt_block}
+          </pre>
+        </CardContent>
+      </Card>
     </div>
   );
 }

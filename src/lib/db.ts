@@ -4236,6 +4236,228 @@ export function listVideosPendingHookAnalysis(limit = 200): Array<{
     .all(activeId, limit) as Array<{ id: string; title: string }>;
 }
 
+/* ---------- Hook Playbook (consolidated feedback) ---------- */
+
+/**
+ * Average of each of the seven score dimensions across the active
+ * channel's analyzed hooks. The per-video cards show seven numbers each;
+ * the playbook needs the channel-level picture so it can name the single
+ * weakest and strongest axis instead of restating 40 cards.
+ *
+ * Returns nulls (not zeros) when nothing is analyzed — a zero average
+ * would read as "you score 0 on open loop", which is a lie.
+ */
+export function hookDimensionAverages(): {
+  n: number;
+  open_loop: number | null;
+  value_promise: number | null;
+  conflict: number | null;
+  specific_language: number | null;
+  identification: number | null;
+  pacing: number | null;
+  benefit: number | null;
+} {
+  const empty = {
+    n: 0,
+    open_loop: null,
+    value_promise: null,
+    conflict: null,
+    specific_language: null,
+    identification: null,
+    pacing: null,
+    benefit: null,
+  };
+  const activeId = getActiveChannelId();
+  if (!activeId) return empty;
+  const row = db
+    .prepare(
+      `SELECT
+         COUNT(*) AS n,
+         ROUND(AVG(h.score_open_loop), 2) AS open_loop,
+         ROUND(AVG(h.score_value_promise), 2) AS value_promise,
+         ROUND(AVG(h.score_conflict), 2) AS conflict,
+         ROUND(AVG(h.score_specific_language), 2) AS specific_language,
+         ROUND(AVG(h.score_identification), 2) AS identification,
+         ROUND(AVG(h.score_pacing), 2) AS pacing,
+         ROUND(AVG(h.score_benefit), 2) AS benefit
+       FROM video_hooks h
+       JOIN videos v ON v.id = h.video_id
+       WHERE v.channel_id = ?`
+    )
+    .get(activeId) as typeof empty | undefined;
+  if (!row || row.n === 0) return empty;
+  return row;
+}
+
+/**
+ * Honesty check: split the channel's analyzed hooks at the median
+ * overall_score and compare average views on each side.
+ *
+ * The analyzer grades hooks against a generic growth rubric that knows
+ * nothing about this channel. If the high-scoring half doesn't actually
+ * out-perform the low-scoring half here, the rubric isn't predictive on
+ * this channel and the UI must say so rather than sell its output as
+ * proven. Better to hand the user a hypothesis labelled as one.
+ */
+export function hookScoreVsViews(): {
+  aboveMedianAvgViews: number | null;
+  belowMedianAvgViews: number | null;
+  n: number;
+} {
+  const activeId = getActiveChannelId();
+  if (!activeId) {
+    return { aboveMedianAvgViews: null, belowMedianAvgViews: null, n: 0 };
+  }
+  const rows = db
+    .prepare(
+      `SELECT h.overall_score AS score, v.views AS views
+       FROM video_hooks h
+       JOIN videos v ON v.id = h.video_id
+       WHERE v.channel_id = ?`
+    )
+    .all(activeId) as Array<{ score: number; views: number }>;
+  const n = rows.length;
+  // Two rows is the minimum where "above/below the median" means anything.
+  if (n < 2) return { aboveMedianAvgViews: null, belowMedianAvgViews: null, n };
+
+  const sorted = [...rows].sort((a, b) => a.score - b.score);
+  const mid = Math.floor(sorted.length / 2);
+  const median =
+    sorted.length % 2 === 0
+      ? (sorted[mid - 1].score + sorted[mid].score) / 2
+      : sorted[mid].score;
+
+  // Ties land in the "below" bucket via `< median` on the other side, so
+  // a channel where every hook scored the same yields one empty bucket —
+  // reported as null, which the UI reads as "can't tell".
+  const above = rows.filter((r) => r.score > median);
+  const below = rows.filter((r) => r.score <= median);
+  const avg = (xs: Array<{ views: number }>) =>
+    xs.length === 0
+      ? null
+      : Math.round(xs.reduce((s, x) => s + (x.views ?? 0), 0) / xs.length);
+  return {
+    aboveMedianAvgViews: avg(above),
+    belowMedianAvgViews: avg(below),
+    n,
+  };
+}
+
+export type HookFeedbackRow = {
+  video_id: string;
+  title: string;
+  views: number;
+  formula_type: HookFormula;
+  overall_score: number;
+  /** JSON array TEXT, as stored by the analyzer. */
+  strengths: string | null;
+  improvements: string | null;
+};
+
+/**
+ * Raw per-video feedback for the playbook's clustering pass. Ordered by
+ * views DESC so that if the list ever has to be truncated by `limit`,
+ * what survives is the feedback on the videos that actually matter.
+ */
+export function listHookFeedbackForPlaybook(limit = 200): HookFeedbackRow[] {
+  const activeId = getActiveChannelId();
+  if (!activeId) return [];
+  return db
+    .prepare(
+      `SELECT h.video_id, v.title, v.views, h.formula_type, h.overall_score,
+              h.strengths, h.improvements
+       FROM video_hooks h
+       JOIN videos v ON v.id = h.video_id
+       WHERE v.channel_id = ?
+       ORDER BY v.views DESC
+       LIMIT ?`
+    )
+    .all(activeId, limit) as HookFeedbackRow[];
+}
+
+/**
+ * Shape-of-the-catalogue facts the playbook feeds the model so it can
+ * infer the channel's format before writing rules. Median rather than
+ * mean duration: one 3-hour compilation among 8-minute videos would drag
+ * a mean far away from what the channel actually publishes.
+ */
+export function channelVideoProfile(): {
+  videoCount: number;
+  medianDurationSeconds: number | null;
+} {
+  const activeId = getActiveChannelId();
+  if (!activeId) return { videoCount: 0, medianDurationSeconds: null };
+  const durations = (
+    db
+      .prepare(
+        `SELECT duration_seconds AS d
+         FROM videos
+         WHERE channel_id = ? AND duration_seconds IS NOT NULL
+         ORDER BY duration_seconds`
+      )
+      .all(activeId) as Array<{ d: number }>
+  ).map((r) => r.d);
+  const videoCount = (
+    db
+      .prepare(`SELECT COUNT(*) AS n FROM videos WHERE channel_id = ?`)
+      .get(activeId) as { n: number }
+  ).n;
+  if (durations.length === 0) return { videoCount, medianDurationSeconds: null };
+  const mid = Math.floor(durations.length / 2);
+  const median =
+    durations.length % 2 === 0
+      ? Math.round((durations[mid - 1] + durations[mid]) / 2)
+      : durations[mid];
+  return { videoCount, medianDurationSeconds: median };
+}
+
+/**
+ * One stored playbook per channel — regenerating overwrites. There's no
+ * value in a history here: the playbook is a snapshot of "what the data
+ * says right now", and a stale one would only compete with the fresh one
+ * for the user's attention.
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS hook_playbooks (
+    channel_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    model TEXT,
+    hooks_analyzed INTEGER NOT NULL,
+    generated_at INTEGER NOT NULL
+  );
+`);
+
+export type HookPlaybookRow = {
+  channel_id: string;
+  payload: string; // JSON
+  model: string | null;
+  hooks_analyzed: number;
+  generated_at: number;
+};
+
+export function getHookPlaybook(channelId: string): HookPlaybookRow | undefined {
+  return db
+    .prepare(`SELECT * FROM hook_playbooks WHERE channel_id = ?`)
+    .get(channelId) as HookPlaybookRow | undefined;
+}
+
+export function upsertHookPlaybook(p: {
+  channel_id: string;
+  payload: string;
+  model: string | null;
+  hooks_analyzed: number;
+}): void {
+  db.prepare(
+    `INSERT INTO hook_playbooks (channel_id, payload, model, hooks_analyzed, generated_at)
+     VALUES (?, ?, ?, ?, strftime('%s','now'))
+     ON CONFLICT(channel_id) DO UPDATE SET
+       payload = excluded.payload,
+       model = excluded.model,
+       hooks_analyzed = excluded.hooks_analyzed,
+       generated_at = excluded.generated_at`
+  ).run(p.channel_id, p.payload, p.model ?? null, p.hooks_analyzed);
+}
+
 /* ============================================================
  * FORMULA ANALYZER (Phase D)
  *

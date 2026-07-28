@@ -123,13 +123,61 @@ type AnalyzerOutput = {
  * add a stray preamble or wrap in a code fence; defending against both
  * is cheap.
  */
-function extractJson(text: string): string {
+export function extractJson(text: string): string {
   const fence = text.match(/```(?:json)?\s*\n([\s\S]+?)\n```/);
-  if (fence) return fence[1].trim();
+  if (fence) return escapeControlCharsInStrings(fence[1].trim());
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start >= 0 && end > start) return text.slice(start, end + 1);
-  return text.trim();
+  if (start >= 0 && end > start) {
+    return escapeControlCharsInStrings(text.slice(start, end + 1));
+  }
+  return escapeControlCharsInStrings(text.trim());
+}
+
+/**
+ * Models emit raw newlines inside a JSON string whenever the value is itself
+ * multi-line prose — the Playbook's paste-ready `prompt_block` is exactly that,
+ * and a live run died on `Bad control character in string literal`. Losing an
+ * entire 8000-token generation to one unescaped newline is not acceptable, and
+ * asking the model to escape them is not reliable, so we repair it here.
+ *
+ * Only characters INSIDE string literals are touched, backslash escapes are
+ * respected, and JSON that was already valid passes through byte-for-byte —
+ * a well-formed document contains no raw control characters inside strings.
+ */
+function escapeControlCharsInStrings(json: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of json) {
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      out += ch;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\n") { out += "\\n"; continue; }
+      if (ch === "\r") { out += "\\r"; continue; }
+      if (ch === "\t") { out += "\\t"; continue; }
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
+        out += `\\u${code.toString(16).padStart(4, "0")}`;
+        continue;
+      }
+    }
+    out += ch;
+  }
+  return out;
 }
 
 function validateOutput(parsed: unknown): AnalyzerOutput {
@@ -190,8 +238,12 @@ function validateOutput(parsed: unknown): AnalyzerOutput {
  *
  * Returns `null` if neither provider has a key — caller surfaces a
  * clear "configure a key in Settings" message.
+ *
+ * Exported so hook-playbook.ts uses this exact policy instead of its own
+ * copy: two provider-resolvers would silently drift and the Hook Lab
+ * would analyse on one model and consolidate on another.
  */
-function resolveProvider(
+export function resolveProvider(
   explicit: ProviderChoice | undefined
 ): { provider: ProviderChoice; apiKey: string } | null {
   if (explicit) {

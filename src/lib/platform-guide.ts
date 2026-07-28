@@ -145,7 +145,38 @@ video that has a transcript.
   variant for the analysis. "Auto" uses Claude if its key is set,
   otherwise Gemini.
 - **Tabs** — Dashboard (winning formula, averages), Rankings (every
-  video scored), Video Cards (detailed per-video breakdowns).
+  video scored), Video Cards (detailed per-video breakdowns), Playbook
+  (all the feedback consolidated into one set of rules).
+
+## Playbook tab
+Consolidates every per-video hook analysis on the channel into ONE
+picture, so the user doesn't have to read a few hundred separate
+suggestions. Generated on demand with one AI call ("Generate" /
+"Regenerate" button); the result is stored per channel and re-shown
+until regenerated. Needs at least 5 analysed hooks — below that it
+refuses, because patterns found in 2-3 videos are coincidence.
+
+It shows:
+- **How the AI read this channel** — its one-line understanding of the
+  channel's format and intent. Shown first on purpose: every rule below
+  is built on this reading, so the user should check it.
+- **Verdict** — the single most important thing to change about the
+  channel's hooks.
+- **Diagnosis strip** — weakest and strongest of the 7 score
+  dimensions, plus the winning formula and how many times the channel
+  average views it pulls.
+- **What keeps going wrong / what already works** — recurring themes
+  clustered out of the per-video strengths and improvements, each with
+  how many hooks it affects.
+- **Paste this into your script prompt** — the deliverable: a block of
+  rules, in plain English, that the user copies into the prompt he
+  writes scripts with. Every rule is grounded in this channel's own
+  numbers, and rules that would fight the channel's format (e.g. an
+  analyser telling a calm/sleep channel to raise urgency) are dropped
+  or reframed rather than passed through.
+- **Honesty caution** — if higher-scoring hooks have NOT actually
+  pulled more views on this channel, the tab says so and labels the
+  rules as hypotheses instead of proven wins.
 
 ## Requirements
 - Each video needs a transcript first (Videos page → Transcribe).
