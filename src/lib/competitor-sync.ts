@@ -4,11 +4,14 @@ import {
   competitorMedianViews,
   db,
   getCompetitor,
+  getCompetitorTranscriptLanguage,
   getIntegration,
+  hasCompetitorTranscript,
   purgeStaleReadCompetitorAlerts,
   recordCompetitorAlert,
   updateCompetitorAfterSync,
   upsertCompetitorComments,
+  upsertCompetitorTranscript,
   upsertCompetitorVideo,
   type Competitor,
 } from "./db";
@@ -19,6 +22,11 @@ import {
   resolveChannel,
   YouTubeApiError,
 } from "./youtube";
+import {
+  fetchSubtitleText,
+  SubtitleRateLimitError,
+  SUBTITLE_FETCH_DELAY_MS,
+} from "./youtube-subtitles";
 import { log } from "./logger";
 
 /* ============================================================
@@ -35,7 +43,9 @@ import { log } from "./logger";
  *   - playlistItems.list           1 unit (uploads playlist)
  *   - videos.list (50/batch)       1 unit
  *   - commentThreads.list per video ~1 unit each   = ~50 units
- *   - timedtext (captions)         0 units (free, not in quota)
+ *   - captions via yt-dlp          0 units (not a YouTube Data API call
+ *                                  at all — it reads the same subtitle
+ *                                  tracks the YouTube player uses)
  *   ----------------------------------------------------------
  *   ~62 units per competitor full sync → ~160 syncs/day on the free
  *   tier. Plenty for any normal use.
@@ -63,6 +73,23 @@ const VIDEOS_PER_SYNC = 50;
 // enough to surface theme + sentiment without doubling our quota cost.
 const COMMENTS_PER_VIDEO = 20;
 
+/**
+ * How many competitor videos get their captions fetched per sync.
+ *
+ * Capped well below VIDEOS_PER_SYNC because each fetch is two yt-dlp
+ * invocations plus a deliberate SUBTITLE_FETCH_DELAY_MS pause, so 50
+ * videos would blow past the route's 300s maxDuration. Videos that
+ * already have a stored transcript are skipped, so repeated syncs
+ * backfill the catalogue a chunk at a time — newest first, which is
+ * what competitor analysis actually looks at.
+ */
+const TRANSCRIPTS_PER_SYNC = 10;
+
+/** Sleep helper for the deliberate pacing between subtitle fetches. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class CompetitorSyncError extends Error {
   constructor(message: string) {
     super(message);
@@ -77,6 +104,12 @@ export type SyncResult = {
   channelTitle: string | null;
   medianViews: number;
   transcriptsSaved: number; // 0 on the Apify fallback path
+  /**
+   * True when YouTube 429'd us mid-way through caption fetching and we
+   * stopped early. Metadata and comments in this same sync are still
+   * complete; re-running the sync later picks the transcripts back up.
+   */
+  transcriptsRateLimited?: boolean;
   commentsSaved: number;    // 0 on the Apify fallback path
   source: "youtube-api" | "apify";
 };
@@ -277,10 +310,84 @@ async function syncViaYouTubeApi(
     video_count: videosInserted,
   });
 
-  // Competitor transcripts are no longer fetched — the free timedtext
-  // path was removed platform-wide. Competitor sync keeps metadata +
-  // comments only.
-  const transcriptsSaved = 0;
+  // 4. Transcripts, from YouTube's own subtitle tracks via yt-dlp.
+  //
+  //    This path used to be dead: the old free timedtext endpoint was
+  //    removed and competitor videos got no transcript at all (Deepgram
+  //    is not an option here — 50 competitor videos per sync at
+  //    $0.0043/audio-minute is real money for text we can have free).
+  //    yt-dlp reads the same caption tracks YouTube serves to its own
+  //    player, costs nothing, and uses no YouTube Data API quota.
+  //
+  //    Pacing is deliberate: YouTube rate-limits the caption endpoint
+  //    much harder than its video endpoints (a 429 showed up after only
+  //    four back-to-back requests during development), so we sleep
+  //    SUBTITLE_FETCH_DELAY_MS between videos and stop the whole loop on
+  //    a 429 rather than digging the hole deeper. Metadata and comments
+  //    from this sync are kept either way.
+  let transcriptsSaved = 0;
+  let transcriptsSkipped = 0;
+  let transcriptsMissing = 0;
+  let transcriptRateLimited = false;
+  {
+    // Newest first — competitor analysis looks at recent uploads, and a
+    // capped run means the rest gets picked up by the next sync.
+    const transcriptCandidates = [...videos]
+      .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0))
+      .filter((v) => {
+        if (hasCompetitorTranscript(competitor.id, v.id)) {
+          transcriptsSkipped++;
+          return false;
+        }
+        return true;
+      })
+      .slice(0, TRANSCRIPTS_PER_SYNC);
+
+    // Never assume English: reuse whatever language this competitor's
+    // already-stored transcripts came back in, and let yt-dlp's report of
+    // the video's own original language decide when we have no history.
+    const preferLanguage = getCompetitorTranscriptLanguage(competitor.id);
+
+    for (let i = 0; i < transcriptCandidates.length; i++) {
+      const v = transcriptCandidates[i];
+      if (i > 0) await sleep(SUBTITLE_FETCH_DELAY_MS);
+      try {
+        const subs = await fetchSubtitleText(v.id, { preferLanguage });
+        if (!subs) {
+          transcriptsMissing++;
+          continue;
+        }
+        upsertCompetitorTranscript(competitor.id, v.id, subs.text, subs.language, {
+          source: "captions",
+          autoGenerated: subs.auto,
+        });
+        transcriptsSaved++;
+      } catch (err) {
+        if (err instanceof SubtitleRateLimitError) {
+          transcriptRateLimited = true;
+          log.warn(
+            "competitors",
+            "YouTube rate-limited caption fetching — stopping transcripts for this sync but keeping metadata/comments",
+            {
+              competitorId: competitor.id,
+              transcriptsSaved,
+              videoId: v.id,
+              message: err.message,
+            }
+          );
+          break;
+        }
+        // A single video failing (private, region-locked, yt-dlp hiccup)
+        // must not fail the sync.
+        transcriptsMissing++;
+        log.warn("competitors", "Caption fetch failed for competitor video", {
+          competitorId: competitor.id,
+          videoId: v.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
 
   // 5. Top comments per video (1 unit per video — biggest quota chunk).
   //    If the quota runs out mid-loop we bail out gracefully without
@@ -425,6 +532,9 @@ async function syncViaYouTubeApi(
     videosSeen: videos.length,
     videosInserted,
     transcriptsSaved,
+    transcriptsSkipped,
+    transcriptsMissing,
+    transcriptRateLimited,
     commentsSaved,
     commentsSkipped,
     newAlerts,
@@ -439,6 +549,7 @@ async function syncViaYouTubeApi(
     channelTitle: ch.title,
     medianViews: median,
     transcriptsSaved,
+    transcriptsRateLimited: transcriptRateLimited,
     commentsSaved,
     source: "youtube-api",
   };

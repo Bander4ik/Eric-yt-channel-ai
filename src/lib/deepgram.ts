@@ -108,7 +108,10 @@ const PLAYER_CLIENTS = "tv_embedded,ios,android,web";
  * yt-dlp can use them via `--cookies`. Returns the path + a cleanup
  * callback. Returns null if no cookies are configured.
  */
-function maybeWriteCookiesTempFile(): { path: string; cleanup: () => void } | null {
+export function maybeWriteCookiesTempFile(): {
+  path: string;
+  cleanup: () => void;
+} | null {
   const raw = getSetting("youtube.cookies");
   if (!raw || !raw.trim()) return null;
   // Random filename per invocation to avoid two parallel transcriptions
@@ -136,7 +139,9 @@ function maybeWriteCookiesTempFile(): { path: string; cleanup: () => void } | nu
  * invocations. Centralised here so the bot-detection workarounds stay
  * in one place.
  */
-function ytDlpCommonFlags(cookiesPath: string | null): Record<string, unknown> {
+export function ytDlpCommonFlags(
+  cookiesPath: string | null
+): Record<string, unknown> {
   return {
     noWarnings: true,
     noCheckCertificates: true,
