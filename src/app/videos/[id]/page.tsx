@@ -590,47 +590,55 @@ function TranscriptPanel({
         <CardContent className="space-y-4 p-8 text-center text-sm">
           <div className="text-muted-foreground">{t.videoDetail.noTranscript}</div>
 
-          {/* Transcription is Deepgram-only. yt-dlp pulls the audio into
-              RAM on this machine, streams it to Deepgram, the transcript
-              lands in the local DB. ~$0.0043/min. The upload / paste-URL
-              options below feed Deepgram audio without yt-dlp. */}
+          {/* The button is NOT gated on a Deepgram key any more. Most videos
+              are transcribed from their own YouTube caption track, which
+              costs nothing and needs no account; Deepgram is only reached
+              when a video genuinely has no captions. Hiding the button
+              behind a key the user may never need made a free feature
+              look unavailable. */}
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {deepgramReady ? (
-              <Button
-                onClick={onTranscribe}
-                disabled={transcribing}
-                size="sm"
-                className="gap-2"
-              >
-                {transcribing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Transcribing via Deepgram…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Transcribe with Deepgram
-                    {estCostUsd && (
-                      <span className="ml-1 rounded bg-primary-foreground/15 px-1.5 py-0.5 text-[10px] font-mono">
-                        ≈{estCostUsd}
-                      </span>
-                    )}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Link href="/settings" className="text-sm text-primary hover:underline">
-                Add a Deepgram key in Settings to enable transcription
-              </Link>
-            )}
+            <Button
+              onClick={onTranscribe}
+              disabled={transcribing}
+              size="sm"
+              className="gap-2"
+            >
+              {transcribing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Reading the transcript…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Get transcript
+                </>
+              )}
+            </Button>
           </div>
 
           <p className="text-[11px] text-muted-foreground">
-            Transcription runs through Deepgram — yt-dlp grabs the audio,
-            streams it to Deepgram (≈$0.0043 / min), the transcript lands in
-            your local DB.
+            First we read the video&rsquo;s own YouTube captions — free, no key,
+            a few seconds. Only videos that have no captions fall back to
+            Deepgram
+            {deepgramReady ? (
+              <> (≈$0.0043 / min{estCostUsd ? `, about ${estCostUsd} for this one` : ""}).</>
+            ) : (
+              <>
+                , which needs a key you don&rsquo;t have yet. Everything stays in
+                your local database either way.
+              </>
+            )}
           </p>
+
+          {!deepgramReady && (
+            <p className="text-[11px] text-muted-foreground">
+              <Link href="/settings" className="text-primary hover:underline">
+                Add a Deepgram key
+              </Link>{" "}
+              only if you hit a video without captions.
+            </p>
+          )}
 
           {tcError && (
             <div className="mx-auto max-w-2xl text-left">
@@ -663,27 +671,31 @@ function TranscriptPanel({
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? t.videoDetail.copied : t.videoDetail.copy}
           </Button>
-          {deepgramReady && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const cost = estCostUsd ? ` (≈${estCostUsd})` : "";
-                if (!confirm(`Re-transcribe via Deepgram${cost}?`)) return;
-                onTranscribe();
-              }}
-              disabled={transcribing}
-              className="gap-1.5"
-              title="Re-transcribe via Deepgram (yt-dlp pulls audio locally, streams to Deepgram)"
-            >
-              {transcribing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              {transcribing ? "Deepgram…" : "Deepgram"}
-            </Button>
-          )}
+          {/* Also ungated: re-reading the captions is free, so requiring a
+              Deepgram key here would have locked people out of refreshing a
+              transcript that never cost anything in the first place. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const cost =
+                deepgramReady && estCostUsd
+                  ? `\n\nCaptions are free. If this video has none it falls back to Deepgram, roughly ${estCostUsd}.`
+                  : "\n\nThis reads the video's own YouTube captions — free.";
+              if (!confirm(`Fetch this transcript again?${cost}`)) return;
+              onTranscribe();
+            }}
+            disabled={transcribing}
+            className="gap-1.5"
+            title="Re-read the transcript — YouTube captions first, Deepgram only if there are none"
+          >
+            {transcribing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {transcribing ? "Reading…" : "Refresh"}
+          </Button>
         </div>
         {tcError && (
           <div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">

@@ -174,23 +174,13 @@ export function TranscribeAllBanner() {
 
   const finishedJob = job && job.status !== "running" && !dismissed ? job : null;
 
-  // Deepgram not configured — soft hint, but don't waste sidebar space if
-  // there's nothing missing anyway.
-  if (!deepgramReady) {
-    if (!preview || preview.missing === 0) return null;
-    return (
-      <div className="mb-4 flex items-start gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm">
-        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="flex-1">
-          <div className="font-medium">{t.deepgram.missingHint.replace("{n}", String(preview.missing))}</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">{t.deepgram.notConfiguredHint}</div>
-        </div>
-        <a href="/settings" className="shrink-0 text-xs font-medium text-primary hover:underline">
-          {t.deepgram.goToSettings} →
-        </a>
-      </div>
-    );
-  }
+  // NOTE: there used to be an early return here that hid the whole banner
+  // (offering only a "go to Settings" link) whenever no Deepgram key was
+  // configured. That's wrong now — most videos transcribe for free from
+  // their own YouTube captions and need no key at all. A missing key only
+  // matters for the minority of videos with no captions, which fall back
+  // to Deepgram; that limitation is now surfaced as a hint below instead
+  // of gating the entire feature.
 
   // Finished job summary
   if (finishedJob) {
@@ -400,6 +390,19 @@ export function TranscribeAllBanner() {
             {t.deepgram.ctaHint
               .replace("{duration}", durationLabel)
               .replace("{amount}", `$${costUsd}`)}
+          </div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {deepgramReady
+              ? t.deepgram.captionsFreeHint
+              : t.deepgram.noKeyFallbackHint}
+            {!deepgramReady && (
+              <>
+                {" "}
+                <a href="/settings" className="font-medium text-primary hover:underline">
+                  {t.deepgram.goToSettings} →
+                </a>
+              </>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">

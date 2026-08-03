@@ -339,6 +339,8 @@ type DictionaryShape = {
     failed: string;
     notConfiguredHint: string;
     goToSettings: string;
+    captionsFreeHint: string;
+    noKeyFallbackHint: string;
     // Confirm modal
     modalTitle: string;
     modalSubtitle: string;
@@ -795,6 +797,10 @@ export const dictionaries: { en: DictionaryShape } = {
       notConfiguredHint:
         "Add your Deepgram API key in Settings to transcribe videos without YouTube captions.",
       goToSettings: "Open Settings",
+      captionsFreeHint:
+        "Most videos are transcribed free from their own YouTube captions — no key needed. Only videos with no captions fall back to Deepgram.",
+      noKeyFallbackHint:
+        "No Deepgram key configured — videos without captions will fail until you add one in Settings.",
       modalTitle: "Transcribe missing videos",
       modalSubtitle: "Audio is streamed directly from YouTube to Deepgram — nothing is saved to your computer.",
       modalRowVideos: "Videos",

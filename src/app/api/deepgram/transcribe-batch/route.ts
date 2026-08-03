@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   createTranscriptionJob,
+  getActiveChannelId,
   getActiveTranscriptionJob,
+  getChannelTranscriptLanguage,
   getIntegration,
   getSetting,
   getVideosByIds,
@@ -13,6 +15,11 @@ import {
   type TranscribeCandidate,
 } from "@/lib/db";
 import { estimateCostCents, transcribeYouTubeVideo } from "@/lib/deepgram";
+import {
+  fetchSubtitleText,
+  SubtitleRateLimitError,
+  SUBTITLE_FETCH_DELAY_MS,
+} from "@/lib/youtube-subtitles";
 import { log } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -196,13 +203,11 @@ type PostBody = {
  *   }
  */
 export async function POST(req: Request) {
-  const apiKey = getIntegration("deepgram")?.api_key;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "Deepgram API key is not configured. Add it in Settings." },
-      { status: 400 }
-    );
-  }
+  // NOTE: the Deepgram key is deliberately NOT required up front any
+  // more. Most videos are transcribed for free from their own YouTube
+  // caption track; only videos without captions ever reach Deepgram, and
+  // only then — per video, inside the worker loop — do we need a key.
+  const apiKey = getIntegration("deepgram")?.api_key ?? null;
 
   // Don't start a second batch on top of a running one — the UI should
   // prevent this, but be defensive on the server too.
@@ -274,19 +279,64 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, jobId, total: videos.length });
 }
 
+/**
+ * Serialises calls to `fn` across the ENTIRE job, with a pause of
+ * `delayMs` after each call finishes before the next one is allowed to
+ * start. Exported (module-private, but structured as a pure factory) so
+ * it can be unit-tested in isolation from the route.
+ *
+ * Why this exists: `CONCURRENCY` workers run in parallel, which is fine
+ * for Deepgram (a paid, rate-limit-tolerant API) but is exactly what
+ * trips YouTube's caption endpoint — during prototyping, a single
+ * video's fourth language request in quick succession came back
+ * `HTTP Error 429: Too Many Requests`. Wrapping ONLY the caption call in
+ * this gate keeps the Deepgram fallback running at full concurrency
+ * while guaranteeing no two caption fetches for this job are ever in
+ * flight at once.
+ */
+export function createSerialGate(delayMs: number) {
+  let chain: Promise<unknown> = Promise.resolve();
+  return function schedule<T>(fn: () => Promise<T>): Promise<T> {
+    const run = chain.then(fn, fn);
+    // Whether fn resolved or rejected, the NEXT scheduled call still has
+    // to wait out the pause before it may start — that's what keeps
+    // consecutive requests spaced apart even after a caption failure.
+    chain = run.then(
+      () => new Promise((resolve) => setTimeout(resolve, delayMs)),
+      () => new Promise((resolve) => setTimeout(resolve, delayMs))
+    );
+    return run;
+  };
+}
+
 async function runBatch(
   jobId: number,
-  apiKey: string,
+  apiKey: string | null,
   videos: { id: string; title: string; duration_seconds: number | null }[]
 ): Promise<void> {
-  // Queue + worker pattern. With CONCURRENCY = 1 there's a single
-  // worker, so videos are transcribed strictly one after another.
-  // Progress is persisted after each item so the UI poll sees it move.
+  // Queue + worker pattern. `CONCURRENCY` workers pull from a shared
+  // cursor, so the Deepgram fallback can run several videos at once.
+  // Caption fetches are a different story — see `createSerialGate` above
+  // — so they go through a dedicated gate shared by every worker,
+  // independent of CONCURRENCY.
   let cursor = 0;
   let done = 0;
   let failed = 0;
+  let captionsDone = 0;
   let costCentsTotal = 0;
   let lastError: string | null = null;
+
+  // Once YouTube rate-limits us, every further caption attempt in this
+  // job will just fail the same way — stop trying and let everything
+  // remaining fall through to Deepgram (or fail per-video if there's no
+  // key), rather than hammering YouTube harder for no benefit.
+  let captionsDisabled = false;
+
+  const captionGate = createSerialGate(SUBTITLE_FETCH_DELAY_MS);
+  // The whole batch is scoped to one active channel (see
+  // resolveBatchVideos), so the language hint is the same for every
+  // video in it.
+  const channelId = getActiveChannelId();
 
   const worker = async (): Promise<void> => {
     while (true) {
@@ -294,32 +344,100 @@ async function runBatch(
       if (i >= videos.length) return;
       const v = videos[i];
       updateTranscriptionJob(jobId, { current_video_id: v.id });
-      try {
-        // Single path: Deepgram. The caption fast-paths were removed —
-        // transcription goes through Deepgram only, one video at a time.
-        const result = await transcribeYouTubeVideo(v.id, apiKey);
-        upsertTranscript(v.id, result.text, result.language);
-        recordDeepgramUsage({
-          videoId: v.id,
-          durationSeconds: result.durationSeconds,
-          costCents: result.costCents,
-          model: result.model,
-        });
-        done++;
-        costCentsTotal += result.costCents;
-      } catch (err) {
-        failed++;
-        lastError = err instanceof Error ? err.message : String(err);
-        log.warn("deepgram", `Batch item failed: ${v.id}`, {
-          jobId,
-          videoId: v.id,
-          error: lastError,
-        });
+
+      let transcribed = false;
+
+      // ---- Path 1: YouTube's own subtitle track (free), serialised ----
+      if (!captionsDisabled) {
+        try {
+          const subs = await captionGate(() =>
+            fetchSubtitleText(v.id, {
+              preferLanguage: getChannelTranscriptLanguage(channelId),
+            })
+          );
+          if (subs) {
+            upsertTranscript(v.id, subs.text, subs.language, {
+              source: "captions",
+              autoGenerated: subs.auto,
+            });
+            done++;
+            captionsDone++;
+            transcribed = true;
+            log.info("subtitles", "Batch item transcribed from YouTube captions", {
+              jobId,
+              videoId: v.id,
+              language: subs.language,
+              auto: subs.auto,
+            });
+          } else {
+            log.info("subtitles", "No usable captions — falling back to Deepgram", {
+              jobId,
+              videoId: v.id,
+            });
+          }
+        } catch (err) {
+          if (err instanceof SubtitleRateLimitError) {
+            captionsDisabled = true;
+            log.warn(
+              "subtitles",
+              `YouTube rate-limited captions — disabling captions for the rest of this batch: ${err.message}`,
+              { jobId, videoId: v.id }
+            );
+          } else {
+            const msg = err instanceof Error ? err.message : String(err);
+            log.warn(
+              "subtitles",
+              `Caption fetch failed, falling back to Deepgram: ${msg}`,
+              { jobId, videoId: v.id }
+            );
+          }
+        }
       }
+
+      // ---- Path 2: Deepgram (paid), only for videos captions missed ----
+      if (!transcribed) {
+        if (apiKey) {
+          try {
+            const result = await transcribeYouTubeVideo(v.id, apiKey);
+            upsertTranscript(v.id, result.text, result.language, {
+              source: "deepgram",
+              autoGenerated: null,
+            });
+            recordDeepgramUsage({
+              videoId: v.id,
+              durationSeconds: result.durationSeconds,
+              costCents: result.costCents,
+              model: result.model,
+            });
+            done++;
+            costCentsTotal += result.costCents;
+            transcribed = true;
+          } catch (err) {
+            failed++;
+            lastError = err instanceof Error ? err.message : String(err);
+            log.warn("deepgram", `Batch item failed: ${v.id}`, {
+              jobId,
+              videoId: v.id,
+              error: lastError,
+            });
+          }
+        } else {
+          failed++;
+          lastError = captionsDisabled
+            ? `YouTube rate-limited caption fetching for this batch, and "${v.title}" (${v.id}) has no Deepgram API key configured to fall back to. Add a Deepgram key in Settings, or try again later once the rate limit clears.`
+            : `"${v.title}" (${v.id}) has no YouTube caption track, and no Deepgram API key is configured to fall back to. Add a Deepgram key in Settings to transcribe it.`;
+          log.warn("deepgram", `Batch item failed: ${v.id} (no captions, no Deepgram key)`, {
+            jobId,
+            videoId: v.id,
+          });
+        }
+      }
+
       // Flush progress to DB after each item — UI picks it up on next poll.
       updateTranscriptionJob(jobId, {
         done,
         failed,
+        captions_done: captionsDone,
         cost_cents: costCentsTotal,
         last_error: lastError,
       });
@@ -338,6 +456,7 @@ async function runBatch(
       jobId,
       done,
       failed,
+      captionsDone,
       costCents: costCentsTotal,
     });
   } catch (err) {

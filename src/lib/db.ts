@@ -2928,6 +2928,11 @@ export type TranscriptionJob = {
   current_video_id: string | null;
   status: "running" | "completed" | "failed" | "cancelled";
   last_error: string | null;
+  /**
+   * How many of `done` came free from YouTube captions rather than paid
+   * Deepgram transcription. `done - captions_done` is the paid count.
+   */
+  captions_done: number;
 };
 
 export function getActiveTranscriptionJob(): TranscriptionJob | undefined {
@@ -5853,6 +5858,25 @@ try {
   ).map((c) => c.name);
   if (!ideaCols.includes("thumbnail_variant_id")) {
     db.exec(`ALTER TABLE ideas ADD COLUMN thumbnail_variant_id INTEGER`);
+  }
+} catch {
+  /* noop -- table may not exist yet on a brand-new DB */
+}
+
+// The bulk-transcribe batch now tries free YouTube captions before ever
+// touching Deepgram, so `done` alone no longer says how many of those
+// were free vs paid. `captions_done` tracks the free half; the paid half
+// is `done - captions_done`. Idempotent migration, same style as above.
+try {
+  const jobCols = (
+    db.prepare(`PRAGMA table_info(transcription_jobs)`).all() as {
+      name: string;
+    }[]
+  ).map((c) => c.name);
+  if (!jobCols.includes("captions_done")) {
+    db.exec(
+      `ALTER TABLE transcription_jobs ADD COLUMN captions_done INTEGER NOT NULL DEFAULT 0`
+    );
   }
 } catch {
   /* noop -- table may not exist yet on a brand-new DB */
