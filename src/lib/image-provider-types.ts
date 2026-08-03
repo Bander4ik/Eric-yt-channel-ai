@@ -120,7 +120,17 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
   // it is the cheapest way in and also the most constrained: it takes
   // reference images as URLs only. Our own and competitor thumbnails are
   // public YouTube URLs so those work, but locally uploaded brand assets
-  // cannot be sent — hence maxCharacterRefs: 0.
+  // cannot be sent — hence maxCharacterRefs: 0 on every model here.
+  //
+  // The models split into two kinds. The image-to-image endpoints accept
+  // reference URLs (each under its own field name — see
+  // KIE_REQUEST_SHAPES below); the text-to-image ones accept none at all,
+  // so their maxStyleRefs is 0 rather than a cap that would hand
+  // references to a request with nowhere to put them.
+  //
+  // kie bills in its own credits and publishes no per-image price for any
+  // of these, so estimateCents is null throughout. What the run actually
+  // cost in credits is recorded from kie's own response.
   kie: [
     {
       id: "nano-banana-pro",
@@ -131,9 +141,85 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       note: "Takes reference images. kie bills in credits and publishes no per-image price for this model, so no cost is recorded — check your kie dashboard.",
     },
     {
+      id: "nano-banana-2",
+      label: "Nano Banana 2 (Gemini 3.1 Flash Image)",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
+    },
+    {
       id: "google/nano-banana",
       label: "Nano Banana (Gemini 2.5 Flash Image)",
+      // The one kie model with a knowable price: it is 4 credits at kie's
+      // published ~$0.005/credit. That is the same rate `thumbnail-pricing.ts`
+      // records after a run, so leaving this null would show "price not
+      // published" on the button and then charge a number we already knew.
       estimateCents: 2,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "seedream/5-pro-image-to-image",
+      label: "Seedream 5 Pro",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
+    },
+    {
+      id: "seedream/5-pro-text-to-image",
+      label: "Seedream 5 Pro (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "seedream/4.5-text-to-image",
+      label: "Seedream 4.5 (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "flux-2/pro-image-to-image",
+      label: "FLUX 2 Pro",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
+    },
+    {
+      id: "flux-2/pro-text-to-image",
+      label: "FLUX 2 Pro (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "grok-imagine/text-to-image",
+      label: "Grok Imagine (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "z-image",
+      label: "Z-Image (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "google/imagen4",
+      label: "Imagen 4 (text only)",
+      estimateCents: null,
       maxStyleRefs: 0,
       maxCharacterRefs: 0,
       note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
@@ -157,6 +243,52 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
     },
   ],
 };
+
+/**
+ * Per-model request shape for kie.ai.
+ *
+ * kie fronts a dozen other people's models behind one endpoint but does
+ * NOT normalise their inputs: the field that carries reference image URLs
+ * is named differently by each family, and most schemas have no
+ * `output_format` at all. Sending the wrong field name gets the request
+ * rejected; sending a field the model ignores means the user's actual
+ * thumbnails silently fail to reach it.
+ *
+ * Values below were read from each model's own schema page under
+ * https://docs.kie.ai/market/ on 2026-08-03. This table lives next to
+ * IMAGE_MODELS on purpose — the two must never drift apart.
+ */
+export type KieRequestShape = {
+  /** Which input field carries reference image URLs; null = text-to-image only. */
+  refsField: "image_input" | "image_urls" | "input_urls" | null;
+  /** Whether the model's schema documents an output_format field. */
+  outputFormat: boolean;
+};
+
+export const KIE_REQUEST_SHAPES: Record<string, KieRequestShape> = {
+  "nano-banana-pro": { refsField: "image_input", outputFormat: true },
+  "nano-banana-2": { refsField: "image_input", outputFormat: true },
+  "google/nano-banana": { refsField: null, outputFormat: true },
+  "seedream/5-pro-image-to-image": { refsField: "image_urls", outputFormat: true },
+  "seedream/5-pro-text-to-image": { refsField: null, outputFormat: true },
+  "seedream/4.5-text-to-image": { refsField: null, outputFormat: false },
+  "flux-2/pro-image-to-image": { refsField: "input_urls", outputFormat: false },
+  "flux-2/pro-text-to-image": { refsField: null, outputFormat: false },
+  "grok-imagine/text-to-image": { refsField: null, outputFormat: false },
+  "z-image": { refsField: null, outputFormat: false },
+  "google/imagen4": { refsField: null, outputFormat: false },
+};
+
+/**
+ * Shape for a kie model id, defaulting to the safest possible request.
+ *
+ * An unknown id gets prompt + aspect_ratio and nothing else: fewer fields
+ * degrade to a plain text-to-image generation, whereas a guessed field
+ * name gets the whole request rejected.
+ */
+export function kieRequestShape(modelId: string): KieRequestShape {
+  return KIE_REQUEST_SHAPES[modelId] ?? { refsField: null, outputFormat: false };
+}
 
 export function defaultModelFor(p: ImageProviderChoice): string {
   return IMAGE_MODELS[p][0].id;

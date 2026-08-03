@@ -5,6 +5,7 @@ import {
   findModelOption,
   frameSize,
   frameSizeMultipleOf16,
+  kieRequestShape,
   type AspectChoice,
   type ImageProviderChoice,
 } from "./image-provider-types";
@@ -470,13 +471,40 @@ const KIE_TIMEOUT_MS = 5 * 60 * 1000;
  *
  * Reference images go in as URLs, not bytes — which our winners already
  * are, since they're public YouTube thumbnails.
+ *
+ * The request BODY is per-model, not one shape for all of them. kie
+ * proxies each vendor's own schema unchanged: Nano Banana takes reference
+ * URLs in `image_input`, Seedream in `image_urls`, FLUX 2 in
+ * `input_urls`, and the text-to-image endpoints take none; `output_format`
+ * exists on only some of them. So the body is assembled from
+ * `kieRequestShape()` — see KIE_REQUEST_SHAPES in image-provider-types.ts
+ * for where those values come from. A hardcoded shape would either be
+ * rejected outright or, worse, quietly drop the user's reference
+ * thumbnails on every non-Gemini model.
  */
+export function buildKieInput(
+  model: string,
+  prompt: string,
+  aspect: AspectChoice,
+  refUrls: string[]
+): Record<string, unknown> {
+  const shape = kieRequestShape(model);
+  return {
+    prompt,
+    aspect_ratio: aspect,
+    ...(shape.outputFormat ? { output_format: "png" } : {}),
+    ...(shape.refsField && refUrls.length
+      ? { [shape.refsField]: refUrls }
+      : {}),
+  };
+}
+
 async function generateKie(
   opts: GenerateImagesOpts,
   index: number
 ): Promise<GeneratedImage> {
   const { style, character } = cappedRefs(opts);
-  const imageInput = [...style, ...character]
+  const refUrls = [...style, ...character]
     .map((r) => r.sourceUrl)
     .filter((u): u is string => !!u);
 
@@ -488,12 +516,12 @@ async function generateKie(
     },
     body: JSON.stringify({
       model: opts.model,
-      input: {
-        prompt: promptForVariant(opts.prompt, index),
-        aspect_ratio: opts.aspect ?? DEFAULT_ASPECT,
-        output_format: "png",
-        ...(imageInput.length ? { image_input: imageInput } : {}),
-      },
+      input: buildKieInput(
+        opts.model,
+        promptForVariant(opts.prompt, index),
+        opts.aspect ?? DEFAULT_ASPECT,
+        refUrls
+      ),
     }),
   });
 
