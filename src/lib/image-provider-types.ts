@@ -131,6 +131,31 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
   // kie bills in its own credits and publishes no per-image price for any
   // of these, so estimateCents is null throughout. What the run actually
   // cost in credits is recorded from kie's own response.
+  //
+  // Grouped by family, with each reference-capable model ahead of its
+  // text-only sibling. nano-banana-pro stays first overall because it is
+  // the default for this provider.
+  //
+  // Models kie sells that are DELIBERATELY absent, so nobody helpfully
+  // adds them later:
+  //   - gpt-image/1.5-*      its aspect_ratio enum is only 1:1, 2:3, 3:2.
+  //                          No 16:9 and no 9:16, so it cannot produce a
+  //                          YouTube cover at all.
+  //   - grok-imagine/image-to-image
+  //                          takes a `size` field we have not mapped.
+  //   - qwen/image-to-image  its schema has NEITHER aspect_ratio NOR
+  //                          image_size — the output simply inherits the
+  //                          reference image's shape. Since our references
+  //                          are 16:9 thumbnails, a 9:16 Shorts request
+  //                          would silently come back 16:9, and a model
+  //                          that ignores the frame the user picked is
+  //                          worse than no model at all.
+  //   - *-edit and *-remix   (seedream edit, ideogram edit/remix, qwen
+  //                          image-edit, nano-banana-edit) modify a
+  //                          supplied image instead of generating a cover
+  //                          — a different feature, not a model choice.
+  //   - Topaz, Recraft       upscaling and background removal, not
+  //                          generators.
   kie: [
     {
       id: "nano-banana-pro",
@@ -143,6 +168,14 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
     {
       id: "nano-banana-2",
       label: "Nano Banana 2 (Gemini 3.1 Flash Image)",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
+    },
+    {
+      id: "nano-banana-2-lite",
+      label: "Nano Banana 2 Lite",
       estimateCents: null,
       maxStyleRefs: 3,
       maxCharacterRefs: 0,
@@ -177,6 +210,22 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
     },
     {
+      id: "seedream/5-lite-image-to-image",
+      label: "Seedream 5 Lite",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
+    },
+    {
+      id: "seedream/5-lite-text-to-image",
+      label: "Seedream 5 Lite (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
       id: "seedream/4.5-text-to-image",
       label: "Seedream 4.5 (text only)",
       estimateCents: null,
@@ -201,6 +250,78 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
     },
     {
+      id: "flux-2/flex-image-to-image",
+      label: "FLUX 2 Flex",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
+    },
+    {
+      id: "flux-2/flex-text-to-image",
+      label: "FLUX 2 Flex (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "gpt-image-2-image-to-image",
+      label: "GPT Image 2",
+      estimateCents: null,
+      maxStyleRefs: 3,
+      maxCharacterRefs: 0,
+      note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
+    },
+    {
+      id: "gpt-image-2-text-to-image",
+      label: "GPT Image 2 (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "google/imagen4",
+      label: "Imagen 4 (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "google/imagen4-fast",
+      label: "Imagen 4 Fast (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "google/imagen4-ultra",
+      label: "Imagen 4 Ultra (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "ideogram/v3-text-to-image",
+      label: "Ideogram v3 (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
+      id: "qwen/text-to-image",
+      label: "Qwen Image (text only)",
+      estimateCents: null,
+      maxStyleRefs: 0,
+      maxCharacterRefs: 0,
+      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
+    },
+    {
       id: "grok-imagine/text-to-image",
       label: "Grok Imagine (text only)",
       estimateCents: null,
@@ -211,14 +332,6 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
     {
       id: "z-image",
       label: "Z-Image (text only)",
-      estimateCents: null,
-      maxStyleRefs: 0,
-      maxCharacterRefs: 0,
-      note: "Text-to-image only on this endpoint — no reference images, so covers follow the written style profile rather than your actual thumbnails.",
-    },
-    {
-      id: "google/imagen4",
-      label: "Imagen 4 (text only)",
       estimateCents: null,
       maxStyleRefs: 0,
       maxCharacterRefs: 0,
@@ -260,24 +373,60 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
  */
 export type KieRequestShape = {
   /** Which input field carries reference image URLs; null = text-to-image only. */
-  refsField: "image_input" | "image_urls" | "input_urls" | null;
+  refsField: string | null;
+  /** false = the field takes ONE url as a plain string, not an array. */
+  refsAsArray: boolean;
   /** Whether the model's schema documents an output_format field. */
   outputFormat: boolean;
+  /**
+   * How the frame is requested. Most families take `aspect_ratio: "16:9"`.
+   * Ideogram and Qwen instead take `image_size` with named values —
+   * `landscape_16_9` / `portrait_16_9` — and have no aspect_ratio at all.
+   */
+  aspectField: "aspect_ratio" | "image_size";
 };
 
+const RATIO = { refsAsArray: true, aspectField: "aspect_ratio" } as const;
+const NAMED = { refsAsArray: true, aspectField: "image_size" } as const;
+
 export const KIE_REQUEST_SHAPES: Record<string, KieRequestShape> = {
-  "nano-banana-pro": { refsField: "image_input", outputFormat: true },
-  "nano-banana-2": { refsField: "image_input", outputFormat: true },
-  "google/nano-banana": { refsField: null, outputFormat: true },
-  "seedream/5-pro-image-to-image": { refsField: "image_urls", outputFormat: true },
-  "seedream/5-pro-text-to-image": { refsField: null, outputFormat: true },
-  "seedream/4.5-text-to-image": { refsField: null, outputFormat: false },
-  "flux-2/pro-image-to-image": { refsField: "input_urls", outputFormat: false },
-  "flux-2/pro-text-to-image": { refsField: null, outputFormat: false },
-  "grok-imagine/text-to-image": { refsField: null, outputFormat: false },
-  "z-image": { refsField: null, outputFormat: false },
-  "google/imagen4": { refsField: null, outputFormat: false },
+  // Nano Banana
+  "nano-banana-pro": { ...RATIO, refsField: "image_input", outputFormat: true },
+  "nano-banana-2": { ...RATIO, refsField: "image_input", outputFormat: true },
+  "nano-banana-2-lite": { ...RATIO, refsField: "image_urls", outputFormat: false },
+  "google/nano-banana": { ...RATIO, refsField: null, outputFormat: true },
+  // Seedream
+  "seedream/5-pro-image-to-image": { ...RATIO, refsField: "image_urls", outputFormat: true },
+  "seedream/5-pro-text-to-image": { ...RATIO, refsField: null, outputFormat: true },
+  "seedream/5-lite-image-to-image": { ...RATIO, refsField: "image_urls", outputFormat: true },
+  "seedream/5-lite-text-to-image": { ...RATIO, refsField: null, outputFormat: true },
+  "seedream/4.5-text-to-image": { ...RATIO, refsField: null, outputFormat: false },
+  // FLUX
+  "flux-2/pro-image-to-image": { ...RATIO, refsField: "input_urls", outputFormat: false },
+  "flux-2/pro-text-to-image": { ...RATIO, refsField: null, outputFormat: false },
+  "flux-2/flex-image-to-image": { ...RATIO, refsField: "input_urls", outputFormat: false },
+  "flux-2/flex-text-to-image": { ...RATIO, refsField: null, outputFormat: false },
+  // GPT Image
+  "gpt-image-2-image-to-image": { ...RATIO, refsField: "input_urls", outputFormat: false },
+  "gpt-image-2-text-to-image": { ...RATIO, refsField: null, outputFormat: false },
+  // Imagen
+  "google/imagen4": { ...RATIO, refsField: null, outputFormat: false },
+  "google/imagen4-fast": { ...RATIO, refsField: null, outputFormat: false },
+  "google/imagen4-ultra": { ...RATIO, refsField: null, outputFormat: false },
+  // Ideogram — image_size, not aspect_ratio
+  "ideogram/v3-text-to-image": { ...NAMED, refsField: null, outputFormat: false },
+  // Qwen — image_size rather than aspect_ratio
+  "qwen/text-to-image": { ...NAMED, refsField: null, outputFormat: true },
+  // Grok
+  "grok-imagine/text-to-image": { ...RATIO, refsField: null, outputFormat: false },
+  // Z-Image
+  "z-image": { ...RATIO, refsField: null, outputFormat: false },
 };
+
+/** kie's named frame values, for the models that use `image_size`. */
+export function kieImageSize(a: AspectChoice): string {
+  return a === "9:16" ? "portrait_16_9" : "landscape_16_9";
+}
 
 /**
  * Shape for a kie model id, defaulting to the safest possible request.
@@ -287,7 +436,14 @@ export const KIE_REQUEST_SHAPES: Record<string, KieRequestShape> = {
  * name gets the whole request rejected.
  */
 export function kieRequestShape(modelId: string): KieRequestShape {
-  return KIE_REQUEST_SHAPES[modelId] ?? { refsField: null, outputFormat: false };
+  return (
+    KIE_REQUEST_SHAPES[modelId] ?? {
+      refsField: null,
+      refsAsArray: true,
+      outputFormat: false,
+      aspectField: "aspect_ratio",
+    }
+  );
 }
 
 export function defaultModelFor(p: ImageProviderChoice): string {

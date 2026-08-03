@@ -6,6 +6,7 @@ import {
   frameSize,
   frameSizeMultipleOf16,
   kieRequestShape,
+  kieImageSize,
   type AspectChoice,
   type ImageProviderChoice,
 } from "./image-provider-types";
@@ -476,7 +477,9 @@ const KIE_TIMEOUT_MS = 5 * 60 * 1000;
  * proxies each vendor's own schema unchanged: Nano Banana takes reference
  * URLs in `image_input`, Seedream in `image_urls`, FLUX 2 in
  * `input_urls`, and the text-to-image endpoints take none; `output_format`
- * exists on only some of them. So the body is assembled from
+ * exists on only some of them; Ideogram and Qwen replace `aspect_ratio`
+ * with a named `image_size`; and Qwen's reference field holds one URL as a
+ * bare string rather than an array. So the body is assembled from
  * `kieRequestShape()` — see KIE_REQUEST_SHAPES in image-provider-types.ts
  * for where those values come from. A hardcoded shape would either be
  * rejected outright or, worse, quietly drop the user's reference
@@ -491,10 +494,19 @@ export function buildKieInput(
   const shape = kieRequestShape(model);
   return {
     prompt,
-    aspect_ratio: aspect,
+    // Ideogram and Qwen have no aspect_ratio at all — they name their
+    // frames instead — so the two are alternatives, never both.
+    ...(shape.aspectField === "image_size"
+      ? { image_size: kieImageSize(aspect) }
+      : { aspect_ratio: aspect }),
     ...(shape.outputFormat ? { output_format: "png" } : {}),
     ...(shape.refsField && refUrls.length
-      ? { [shape.refsField]: refUrls }
+      ? {
+          // Qwen's image_url is declared as a plain string, not an array.
+          // Sending an array there is rejected; sending all three URLs is
+          // impossible, so the first one wins and maxStyleRefs is 1.
+          [shape.refsField]: shape.refsAsArray ? refUrls : refUrls[0],
+        }
       : {}),
   };
 }
