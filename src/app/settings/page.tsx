@@ -201,6 +201,7 @@ export default function SettingsPage() {
       <section className="space-y-2">
         <SectionHeader title="Channel" desc="Bind and manage your YouTube channel." />
         <YouTubeChannelBinder hasKey={!!status?.youtube?.hasKey} />
+        <ShortsAnalysisSetting />
         <YouTubeCookies />
       </section>
 
@@ -498,6 +499,191 @@ function AiProviderPicker({
  * accessible button rather than the native checkbox so the click
  * target matches the rest of our Settings buttons.
  */
+/**
+ * "Ignore Shorts in analysis" — per-channel, lives in the Channel
+ * section rather than under Optional on purpose: it changes what every
+ * number on every other screen means, which is not an "optional extra".
+ *
+ * The cutoff control only appears once the switch is on; a cutoff with
+ * the filter off is a dead control that invites the user to fiddle with
+ * a setting that does nothing.
+ */
+function ShortsAnalysisSetting() {
+  const { t } = useI18n();
+  const s = t.settings.shorts;
+  const [loaded, setLoaded] = useState(false);
+  const [noChannel, setNoChannel] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [seconds, setSeconds] = useState(60);
+  const [customText, setCustomText] = useState("60");
+  const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/analysis/shorts");
+        if (!alive) return;
+        if (res.status === 400) {
+          setNoChannel(true);
+          setLoaded(true);
+          return;
+        }
+        const data = (await res.json()) as {
+          excludeShorts: boolean;
+          maxSeconds: number;
+        };
+        if (!alive) return;
+        setEnabled(data.excludeShorts);
+        setSeconds(data.maxSeconds);
+        setCustomText(String(data.maxSeconds));
+        setLoaded(true);
+      } catch {
+        if (alive) {
+          setError(s.error);
+          setLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [s.error]);
+
+  const save = useCallback(
+    async (patch: { excludeShorts?: boolean; maxSeconds?: number }) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/analysis/shorts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const data = (await res.json()) as {
+          excludeShorts?: boolean;
+          maxSeconds?: number;
+          error?: string;
+        };
+        if (!res.ok) {
+          setError(data?.error ?? s.error);
+          return;
+        }
+        if (typeof data.excludeShorts === "boolean") setEnabled(data.excludeShorts);
+        if (typeof data.maxSeconds === "number") {
+          setSeconds(data.maxSeconds);
+          setCustomText(String(data.maxSeconds));
+        }
+        setSavedAt(Date.now());
+      } catch {
+        setError(s.error);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [s.error]
+  );
+
+  if (!loaded) return null;
+
+  if (noChannel) {
+    return (
+      <div className="rounded-md border border-border p-3">
+        <div className="text-sm font-medium">{s.label}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{s.noChannel}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-border p-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{s.label}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{s.description}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+          {!busy && savedAt > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+              <Check className="h-3 w-3" /> {s.saved}
+            </span>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant={enabled ? "default" : "outline"}
+            disabled={busy}
+            aria-pressed={enabled}
+            onClick={() => save({ excludeShorts: !enabled })}
+          >
+            {enabled ? "On" : "Off"}
+          </Button>
+        </div>
+      </div>
+
+      {enabled && (
+        <div className="mt-3 border-t border-border/60 pt-3">
+          <Label className="text-xs font-medium">{s.cutoffLabel}</Label>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={seconds === 60 ? "default" : "outline"}
+              className="h-7 text-xs"
+              disabled={busy}
+              onClick={() => save({ maxSeconds: 60 })}
+            >
+              {s.option60}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={seconds === 180 ? "default" : "outline"}
+              className="h-7 text-xs"
+              disabled={busy}
+              onClick={() => save({ maxSeconds: 180 })}
+            >
+              {s.option180}
+            </Button>
+            <span className="text-xs text-muted-foreground">{s.optionCustom}:</span>
+            <Input
+              type="number"
+              min={1}
+              max={600}
+              inputMode="numeric"
+              className="h-7 w-20 text-xs"
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              onBlur={() => {
+                const n = Number(customText);
+                if (!Number.isInteger(n) || n < 1 || n > 600) {
+                  setCustomText(String(seconds));
+                  return;
+                }
+                if (n !== seconds) save({ maxSeconds: n });
+              }}
+              aria-label={s.cutoffLabel}
+            />
+            <span className="text-xs text-muted-foreground">{s.customSuffix}</span>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">{s.cutoffHelp}</p>
+        </div>
+      )}
+
+      <p className="mt-2 text-xs text-muted-foreground">{s.affects}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{s.notAffected}</p>
+      {error && (
+        <p className="mt-2 text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ToggleRow({
   label,
   description,

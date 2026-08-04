@@ -3,9 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   db,
   getActiveChannelId,
+  getExcludeShortsSetting,
   getIntegration,
   getSetting,
   setSetting,
+  shortsExclusionSql,
+  shortsExclusionThreshold,
   titleWordStats,
 } from "./db";
 
@@ -99,6 +102,13 @@ const FORMULA_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 type ViewsRow = { id: string; title: string; views: number };
 type ThumbRow = { id: string; title: string; thumbnail_text: string; views: number };
 
+/**
+ * Every query in this module honours the channel's "ignore Shorts in
+ * analysis" setting via `shortsExclusionSql` (db.ts) — packaging advice
+ * is long-form advice, and Shorts' view counts would otherwise dominate
+ * every median and multiplier here. Off by default; videos with an
+ * unknown duration are kept.
+ */
 function activeChannelViewsRows(): ViewsRow[] {
   const activeId = getActiveChannelId();
   if (!activeId) return [];
@@ -106,7 +116,7 @@ function activeChannelViewsRows(): ViewsRow[] {
     .prepare(
       `SELECT id, title, views
        FROM videos
-       WHERE channel_id = ? AND views IS NOT NULL`
+       WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}`
     )
     .all(activeId) as ViewsRow[];
 }
@@ -142,7 +152,7 @@ export function channelViewStats(): {
         .prepare(
           `SELECT COUNT(*) AS n
            FROM videos
-           WHERE channel_id = ? AND views IS NOT NULL
+           WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
              AND thumbnail_text IS NOT NULL AND thumbnail_text != ''`
         )
         .get(activeId) as { n: number } | undefined)
@@ -177,7 +187,7 @@ export function topPackages(limit = 15): { channelAvg: number; rows: PackageRow[
     .prepare(
       `SELECT id, title, thumbnail_text, views
        FROM videos
-       WHERE channel_id = ? AND views IS NOT NULL
+       WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
          AND thumbnail_text IS NOT NULL AND thumbnail_text != ''
        ORDER BY views DESC
        LIMIT ?`
@@ -318,7 +328,7 @@ export function featureImpact(): Array<{
     .prepare(
       `SELECT id, title, thumbnail_text, views
        FROM videos
-       WHERE channel_id = ? AND views IS NOT NULL
+       WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
          AND published_at IS NOT NULL AND published_at <= ?`
     )
     .all(activeId, matureCutoffUnixSeconds()) as ThumbRow[];
@@ -451,7 +461,7 @@ export function thumbnailWordStats(
     .prepare(
       `SELECT id, title, thumbnail_text, views
        FROM videos
-       WHERE channel_id = ? AND views IS NOT NULL
+       WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
          AND thumbnail_text IS NOT NULL AND thumbnail_text != ''
          AND published_at IS NOT NULL AND published_at <= ?`
     )
@@ -529,7 +539,7 @@ export function thumbnailLengthBuckets(): Array<{
     .prepare(
       `SELECT id, title, thumbnail_text, views
        FROM videos
-       WHERE channel_id = ? AND views IS NOT NULL
+       WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
          AND published_at IS NOT NULL AND published_at <= ?`
     )
     .all(activeId, matureCutoffUnixSeconds()) as ThumbRow[];
@@ -578,8 +588,17 @@ type FormulaCacheEntry = { text: string; ts: number };
 // <channelId>` entries are simply never read again under this key;
 // they age out as harmless orphans in the settings table rather than
 // needing an explicit migration/delete.
+// The "ignore Shorts" setting is part of the key on purpose. Every number
+// this prose is written from moves the moment that switch is flipped, so a
+// cached blurb from the other setting would sit next to figures it no
+// longer describes — for up to a week. Folding the setting into the key
+// invalidates it for free, the same way the `v3` bump does, instead of
+// needing an explicit delete on a settings change.
 function formulaCacheKey(channelId: string): string {
-  return `packaging.formula.v3.${channelId}`;
+  const scope = getExcludeShortsSetting(channelId)
+    ? `noshorts${shortsExclusionThreshold(channelId)}`
+    : "all";
+  return `packaging.formula.v3.${channelId}.${scope}`;
 }
 
 /**

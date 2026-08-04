@@ -352,6 +352,121 @@ export function setSetting(key: string, value: string): void {
   ).run(key, value);
 }
 
+/* ---------- Shorts exclusion (per-channel analysis filter) ----------
+ *
+ * A channel owner can ask every ANALYSIS to ignore Shorts. Why this is
+ * a real problem and not cosmetics: Hook Lab grades the opening 60
+ * seconds, which on a Short is the entire video; Shorts pull far more
+ * views than long-form, so they dominate any "what works here" ranking
+ * by arithmetic alone; and title patterns for the two formats are
+ * simply different jobs.
+ *
+ * DURATION IS THE ONLY SIGNAL WE HAVE. The `videos` table stores no
+ * aspect ratio, no URL form, no Shorts flag — just `duration_seconds`.
+ * And YouTube Shorts now run up to 3 minutes, so no single cutoff is
+ * correct for everyone: a 60s cutoff lets 1–3 minute Shorts through, a
+ * 180s cutoff would throw away genuine short long-form videos. Nobody
+ * can tell a 2-minute Short from a 2-minute normal video by duration
+ * alone, so the cutoff is the channel owner's choice, not ours.
+ *
+ * Default is OFF. Silently changing every existing install's numbers
+ * would be worse than the current behaviour.
+ *
+ * SCOPE: own-channel analysis only. `competitor_videos` is deliberately
+ * NOT filtered by any of this — competitor analysis is out of scope for
+ * this feature, recorded here so it reads as a decision rather than an
+ * oversight.
+ */
+
+/** Fallback cutoff when nothing (or nothing sane) is stored. */
+export const DEFAULT_SHORTS_MAX_SECONDS = 60;
+
+/** Bounds for a cutoff a human could plausibly mean (1s .. 10min). */
+const SHORTS_MAX_SECONDS_MIN = 1;
+const SHORTS_MAX_SECONDS_MAX = 600;
+
+export function getExcludeShortsSetting(channelId: string): boolean {
+  return getSetting(`analysis.excludeShorts.${channelId}`) === "1";
+}
+
+export function setExcludeShortsSetting(channelId: string, exclude: boolean): void {
+  setSetting(`analysis.excludeShorts.${channelId}`, exclude ? "1" : "0");
+}
+
+/**
+ * The channel's Shorts cutoff in seconds, always a safe integer.
+ *
+ * Anything stored that isn't a finite integer inside
+ * [SHORTS_MAX_SECONDS_MIN, SHORTS_MAX_SECONDS_MAX] falls back to the
+ * 60s default. This validation is SECURITY-RELEVANT, not just tidiness
+ * — see `shortsExclusionSql`, which inlines this number into SQL text.
+ */
+export function getShortsMaxSeconds(channelId: string): number {
+  const raw = getSetting(`analysis.shortsMaxSeconds.${channelId}`);
+  if (raw === null) return DEFAULT_SHORTS_MAX_SECONDS;
+  const n = Number(raw);
+  if (
+    !Number.isFinite(n) ||
+    !Number.isInteger(n) ||
+    n < SHORTS_MAX_SECONDS_MIN ||
+    n > SHORTS_MAX_SECONDS_MAX
+  ) {
+    return DEFAULT_SHORTS_MAX_SECONDS;
+  }
+  return n;
+}
+
+export function setShortsMaxSeconds(channelId: string, seconds: number): void {
+  const n = Number(seconds);
+  const safe =
+    Number.isFinite(n) &&
+    Number.isInteger(n) &&
+    n >= SHORTS_MAX_SECONDS_MIN &&
+    n <= SHORTS_MAX_SECONDS_MAX
+      ? n
+      : DEFAULT_SHORTS_MAX_SECONDS;
+  setSetting(`analysis.shortsMaxSeconds.${channelId}`, String(safe));
+}
+
+/**
+ * The cutoff to apply for a channel, or `null` when the channel has the
+ * setting off. Use this for the handful of places that filter in JS
+ * rather than in SQL (channelAnalytics), so both paths agree on the
+ * exact same threshold.
+ */
+export function shortsExclusionThreshold(channelId: string | null): number | null {
+  if (!channelId) return null;
+  if (!getExcludeShortsSetting(channelId)) return null;
+  return getShortsMaxSeconds(channelId);
+}
+
+/**
+ * SQL fragment that removes Shorts from a channel-scoped video query, or
+ * "" when the channel has the setting off.
+ *
+ * Returns e.g. ` AND (v.duration_seconds IS NULL OR v.duration_seconds > 60)`.
+ * `alias` is the table alias the query uses for `videos` (pass "videos"
+ * when the query has no alias).
+ *
+ * THE THRESHOLD IS INLINED INTO THE STRING, NOT BOUND AS A PARAMETER —
+ * deliberately. Threading one more bound parameter through 20+
+ * `.prepare().all(...)` call sites, each with its own argument order, is
+ * exactly where a silent off-by-one-argument bug gets introduced. The
+ * price of inlining is that the value MUST be proven safe before it
+ * reaches the string, which is what `getShortsMaxSeconds` above does:
+ * it coerces with Number() and falls back to 60 unless the result is a
+ * finite INTEGER in 1..600. A non-integer can never reach this SQL.
+ *
+ * NULL DURATIONS ARE KEPT. An unknown length is not evidence of being a
+ * Short; dropping those rows would silently shrink every statistic on
+ * every screen.
+ */
+export function shortsExclusionSql(alias: string, channelId: string | null): string {
+  const max = shortsExclusionThreshold(channelId);
+  if (max === null) return "";
+  return ` AND (${alias}.duration_seconds IS NULL OR ${alias}.duration_seconds > ${max})`;
+}
+
 /* ---------- Transcripts ---------- */
 
 /**
@@ -1290,7 +1405,11 @@ export function dashboardAggregates(): {
   const activeId = getActiveChannelId();
   const allVideos = (
     activeId
-      ? db.prepare(`SELECT * FROM videos WHERE channel_id = ?`).all(activeId)
+      ? db
+          .prepare(
+            `SELECT * FROM videos WHERE channel_id = ?${shortsExclusionSql("videos", activeId)}`
+          )
+          .all(activeId)
       : db.prepare(`SELECT * FROM videos`).all()
   ) as Video[];
   const total = allVideos.length;
@@ -1890,7 +2009,7 @@ export function videoStats(): {
                     COALESCE(SUM(views),0) as totalViews,
                     COALESCE(SUM(likes),0) as totalLikes,
                     COALESCE(SUM(comments),0) as totalComments
-             FROM videos WHERE channel_id = ?`
+             FROM videos WHERE channel_id = ?${shortsExclusionSql("videos", activeId)}`
           )
           .get(activeId)
       : db
@@ -1996,7 +2115,7 @@ export function channelAnalytics(): ChannelAnalytics | null {
   // Scope every aggregate below to the active channel so the deep-analytics
   // page reflects the channel currently selected in the switcher.
   const activeId = getActiveChannelId();
-  const videos = (
+  const allVideos = (
     activeId
       ? db
           .prepare(
@@ -2011,6 +2130,23 @@ export function channelAnalytics(): ChannelAnalytics | null {
           )
           .all()
   ) as VideoRow[];
+  if (allVideos.length === 0) return null;
+
+  // The Shorts filter is applied HERE IN JS, not in the query above, and
+  // that is the whole point: the contentMix section below exists to
+  // report the shorts-vs-long-form split, so it must keep seeing every
+  // video. Filtering in SQL would starve it and make it announce that
+  // the channel has no Shorts. Everything else on this page (core,
+  // performance, cadence, patterns, themes, growth) reads the filtered
+  // `videos` list. Same threshold source as the SQL helper, so the two
+  // paths can never disagree.
+  const shortsCutoff = shortsExclusionThreshold(activeId);
+  const videos =
+    shortsCutoff === null
+      ? allVideos
+      : allVideos.filter(
+          (v) => v.duration_seconds === null || v.duration_seconds > shortsCutoff
+        );
   if (videos.length === 0) return null;
 
   const totalViews = videos.reduce((s, v) => s + (v.views ?? 0), 0);
@@ -2051,11 +2187,14 @@ export function channelAnalytics(): ChannelAnalytics | null {
   const likesPerView = totalViews > 0 ? totalLikes / totalViews : 0;
   const commentsPerView = totalViews > 0 ? totalComments / totalViews : 0;
 
-  // Content mix — Shorts (≤60s) vs long-form
-  const shortsArr = videos.filter(
+  // Content mix — Shorts (≤60s) vs long-form.
+  // Reads `allVideos` ON PURPOSE (see the shortsCutoff note above): this
+  // is the one block whose job is to REPORT the Shorts, so the "ignore
+  // Shorts in analysis" setting must not reach it.
+  const shortsArr = allVideos.filter(
     (v) => typeof v.duration_seconds === "number" && v.duration_seconds <= 60
   );
-  const longArr = videos.filter(
+  const longArr = allVideos.filter(
     (v) => !v.duration_seconds || v.duration_seconds > 60
   );
   const sumViews = (arr: VideoRow[]) => arr.reduce((s, v) => s + (v.views ?? 0), 0);
@@ -2070,7 +2209,9 @@ export function channelAnalytics(): ChannelAnalytics | null {
     { label: "30m+", min: 1800, max: Number.POSITIVE_INFINITY },
   ];
   const durationBuckets = bucketDefs.map((b) => {
-    const xs = videos.filter((v) => {
+    // Also the full catalogue — the duration histogram is part of the
+    // same shorts-vs-long-form picture.
+    const xs = allVideos.filter((v) => {
       const d = v.duration_seconds ?? 0;
       return d >= b.min && d < b.max;
     });
@@ -2086,7 +2227,7 @@ export function channelAnalytics(): ChannelAnalytics | null {
             `SELECT t.language, t.text
              FROM transcripts t
              JOIN videos v ON v.id = t.video_id
-             WHERE v.channel_id = ?`
+             WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}`
           )
           .all(activeId)
       : db.prepare(`SELECT language, text FROM transcripts`).all()
@@ -4031,9 +4172,17 @@ export function competitorGapAnalysis(opts: { topN?: number } = {}): Array<{
   // in titles from a different connected channel and call them "ours",
   // hiding gap-words that are actually opportunities for THIS channel.
   const activeId = getActiveChannelId();
+  // Only the OWN-channel side gets the Shorts filter. The competitor
+  // query below is left alone on purpose — competitor analysis is out of
+  // scope for the "ignore Shorts" setting (see shortsExclusionSql).
   const ownTitles = activeId
     ? (db
-        .prepare(`SELECT title FROM videos WHERE channel_id = ?`)
+        .prepare(
+          `SELECT title FROM videos WHERE channel_id = ?${shortsExclusionSql(
+            "videos",
+            activeId
+          )}`
+        )
         .all(activeId) as { title: string }[])
     : [];
   const ownWords = new Set<string>();
@@ -4249,7 +4398,7 @@ export function listHooksWithVideos(opts: {
       `SELECT h.*, v.title, v.views, v.published_at, v.thumbnail_url
        FROM video_hooks h
        JOIN videos v ON v.id = h.video_id
-       WHERE ${whereParts.join(" AND ")}
+       WHERE ${whereParts.join(" AND ")}${shortsExclusionSql("v", activeId)}
        ORDER BY ${order}
        LIMIT ?`
     )
@@ -4278,7 +4427,7 @@ export function hookFormulaStats(): Array<{
          ROUND(AVG(h.overall_score), 1) AS avgScore
        FROM video_hooks h
        JOIN videos v ON v.id = h.video_id
-       WHERE v.channel_id = ?
+       WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}
        GROUP BY h.formula_type
        ORDER BY avgViews DESC`
     )
@@ -4308,13 +4457,21 @@ export function hookOverallStats(): {
         `SELECT COUNT(*) AS n
          FROM video_hooks h
          JOIN videos v ON v.id = h.video_id
-         WHERE v.channel_id = ?`
+         WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}`
       )
       .get(activeId) as { n: number }
   ).n;
+  // `totalVideos` is the denominator of the "N of M analyzed" readout, so
+  // it has to shrink with the same filter the numerator uses — otherwise
+  // the counter could never reach 100% once Shorts are excluded.
   const totalVideos = (
     db
-      .prepare(`SELECT COUNT(*) AS n FROM videos WHERE channel_id = ?`)
+      .prepare(
+        `SELECT COUNT(*) AS n FROM videos WHERE channel_id = ?${shortsExclusionSql(
+          "videos",
+          activeId
+        )}`
+      )
       .get(activeId) as { n: number }
   ).n;
   const avgRow = db
@@ -4322,7 +4479,7 @@ export function hookOverallStats(): {
       `SELECT ROUND(AVG(h.overall_score), 1) AS avg
        FROM video_hooks h
        JOIN videos v ON v.id = h.video_id
-       WHERE v.channel_id = ?`
+       WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}`
     )
     .get(activeId) as { avg: number | null } | undefined;
   const formulas = hookFormulaStats();
@@ -4354,11 +4511,15 @@ export function listVideosPendingHookAnalysis(limit = 200): Array<{
   if (!activeId) return [];
   return db
     .prepare(
+      // MUST filter: this feeds both the batch analyzer and Hook Lab's
+      // "N pending" counter. If Shorts are excluded from the analysis
+      // but still queued here, the counter can never reach zero and the
+      // analyzer burns credits on videos the dashboard will ignore.
       `SELECT v.id, v.title
        FROM videos v
        LEFT JOIN video_hooks h ON h.video_id = v.id
        LEFT JOIN transcripts t ON t.video_id = v.id
-       WHERE v.channel_id = ?
+       WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}
          AND h.video_id IS NULL
          AND t.video_id IS NOT NULL
        ORDER BY v.views DESC
@@ -4413,7 +4574,7 @@ export function hookDimensionAverages(): {
          ROUND(AVG(h.score_benefit), 2) AS benefit
        FROM video_hooks h
        JOIN videos v ON v.id = h.video_id
-       WHERE v.channel_id = ?`
+       WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}`
     )
     .get(activeId) as typeof empty | undefined;
   if (!row || row.n === 0) return empty;
@@ -4444,7 +4605,7 @@ export function hookScoreVsViews(): {
       `SELECT h.overall_score AS score, v.views AS views
        FROM video_hooks h
        JOIN videos v ON v.id = h.video_id
-       WHERE v.channel_id = ?`
+       WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}`
     )
     .all(activeId) as Array<{ score: number; views: number }>;
   const n = rows.length;
@@ -4499,7 +4660,7 @@ export function listHookFeedbackForPlaybook(limit = 200): HookFeedbackRow[] {
               h.strengths, h.improvements
        FROM video_hooks h
        JOIN videos v ON v.id = h.video_id
-       WHERE v.channel_id = ?
+       WHERE v.channel_id = ?${shortsExclusionSql("v", activeId)}
        ORDER BY v.views DESC
        LIMIT ?`
     )
@@ -4523,14 +4684,22 @@ export function channelVideoProfile(): {
       .prepare(
         `SELECT duration_seconds AS d
          FROM videos
-         WHERE channel_id = ? AND duration_seconds IS NOT NULL
+         WHERE channel_id = ? AND duration_seconds IS NOT NULL${shortsExclusionSql(
+           "videos",
+           activeId
+         )}
          ORDER BY duration_seconds`
       )
       .all(activeId) as Array<{ d: number }>
   ).map((r) => r.d);
   const videoCount = (
     db
-      .prepare(`SELECT COUNT(*) AS n FROM videos WHERE channel_id = ?`)
+      .prepare(
+        `SELECT COUNT(*) AS n FROM videos WHERE channel_id = ?${shortsExclusionSql(
+          "videos",
+          activeId
+        )}`
+      )
       .get(activeId) as { n: number }
   ).n;
   if (durations.length === 0) return { videoCount, medianDurationSeconds: null };
@@ -4641,7 +4810,7 @@ export function titleWordStats(opts: { minUses?: number; topN?: number } = {}): 
     .prepare(
       `SELECT title, views
        FROM videos
-       WHERE title IS NOT NULL AND channel_id = ?`
+       WHERE title IS NOT NULL AND channel_id = ?${shortsExclusionSql("videos", activeId)}`
     )
     .all(activeId) as { title: string; views: number }[];
   if (rows.length === 0) return [];
@@ -4719,7 +4888,7 @@ export function titleLengthBuckets(): Array<{
     .prepare(
       `SELECT title, views
        FROM videos
-       WHERE title IS NOT NULL AND channel_id = ?`
+       WHERE title IS NOT NULL AND channel_id = ?${shortsExclusionSql("videos", activeId)}`
     )
     .all(activeId) as { title: string; views: number }[];
   const buckets = {
@@ -4760,7 +4929,7 @@ export function topVsBottomTitles(): {
     .prepare(
       `SELECT id, title, views
        FROM videos
-       WHERE title IS NOT NULL AND channel_id = ?
+       WHERE title IS NOT NULL AND channel_id = ?${shortsExclusionSql("videos", activeId)}
        ORDER BY views DESC`
     )
     .all(activeId) as { id: string; title: string; views: number }[];
@@ -6141,7 +6310,10 @@ export function listRecentChannelTitles(channelId: string, limit = 6): string[] 
   const rows = db
     .prepare(
       `SELECT title FROM videos
-       WHERE channel_id = ? AND title IS NOT NULL AND title <> ''
+       WHERE channel_id = ? AND title IS NOT NULL AND title <> ''${shortsExclusionSql(
+         "videos",
+         channelId
+       )}
        ORDER BY published_at DESC
        LIMIT ?`
     )

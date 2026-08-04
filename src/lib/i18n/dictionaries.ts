@@ -367,6 +367,23 @@ type DictionaryShape = {
     theme: string;
     themeLight: string;
     themeDark: string;
+    /** "Ignore Shorts in analysis" — the per-channel analysis filter. */
+    shorts: {
+      label: string;
+      description: string;
+      cutoffLabel: string;
+      cutoffHelp: string;
+      option60: string;
+      option180: string;
+      optionCustom: string;
+      customSuffix: string;
+      affects: string;
+      notAffected: string;
+      saving: string;
+      saved: string;
+      error: string;
+      noChannel: string;
+    };
   };
   googleOAuth: {
     title: string;
@@ -838,6 +855,26 @@ export const dictionaries: { en: DictionaryShape } = {
       theme: "Theme",
       themeLight: "Light",
       themeDark: "Dark",
+      shorts: {
+        label: "Ignore Shorts in analysis",
+        description:
+          "Leave your Shorts out of every number the app works out for you. Shorts pull far more views than normal videos, so when they are mixed in they take over the \"what works on this channel\" answers — and a Shorts hook is the whole video, not an opening. Off by default, so nothing changes until you turn it on.",
+        cutoffLabel: "Treat videos shorter than this as Shorts",
+        cutoffHelp:
+          "YouTube now allows Shorts up to 3 minutes, and the app only knows how long a video is — it cannot tell a 2-minute Short from a 2-minute normal video. So you pick the line. 60 seconds is the safe choice; use 3 minutes only if you actually post Shorts that long. Videos whose length we never got stay in either way.",
+        option60: "Under 1 minute",
+        option180: "Under 3 minutes",
+        optionCustom: "Custom",
+        customSuffix: "seconds",
+        affects:
+          "Changes: Dashboard, Channel analytics, Hook Lab, the Formula analyzer and Packaging.",
+        notAffected:
+          "Does not change: your Videos list (it has its own short/long filter), and nothing is deleted — turn this off and every number comes straight back.",
+        saving: "Saving…",
+        saved: "Saved",
+        error: "Couldn't save that. Is the app still running?",
+        noChannel: "Bind a channel first — this setting is per channel.",
+      },
     },
     googleOAuth: {
       title: "YouTube Analytics (Google OAuth)",
