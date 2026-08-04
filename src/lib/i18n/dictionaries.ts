@@ -330,6 +330,7 @@ type DictionaryShape = {
     missingTitle: string;
     missingHint: string;
     ctaHint: string;
+    ctaHintFree: string;
     ctaButton: string;
     runningTitle: string;
     runningHint: string;
@@ -802,7 +803,8 @@ export const dictionaries: { en: DictionaryShape } = {
     deepgram: {
       missingTitle: "{n} videos have no transcript",
       missingHint: "{n} videos have no transcript",
-      ctaHint: "Total audio: {duration} · Estimated cost: {amount}",
+      ctaHint: "Total audio: {duration} · At most {amount} — only videos without captions reach Deepgram",
+      ctaHintFree: "Total audio: {duration} · Free — read from each video's own YouTube captions",
       ctaButton: "Transcribe all",
       runningTitle: "Transcribing",
       runningHint:

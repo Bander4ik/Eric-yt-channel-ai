@@ -9,6 +9,7 @@ import {
   hookOverallStats,
   hookScoreVsViews,
   listHookFeedbackForPlaybook,
+  shortsScope,
   upsertHookPlaybook,
 } from "./db";
 import { extractJson, resolveProvider } from "./hook-analyzer";
@@ -224,6 +225,13 @@ export function getStoredPlaybook(): {
   if (!channelId) return empty;
   const row = getHookPlaybook(channelId);
   if (!row) return empty;
+  // A playbook is written from the hook statistics, and those move the
+  // moment the "ignore Shorts" switch is flipped. Serving the old one
+  // would state counts that no longer match the data underneath it — and
+  // its "newer hooks exist, regenerate" hint would go negative and hide
+  // itself. Treat a playbook from the other setting as nothing generated
+  // yet, which is exactly what it is.
+  if ((row.shorts_scope ?? null) !== shortsScope(channelId)) return empty;
   try {
     return {
       stored: JSON.parse(row.payload) as StoredPlaybook,

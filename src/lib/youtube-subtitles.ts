@@ -119,9 +119,14 @@ export function vttToText(vtt: string): string {
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
 
-    const tagged = lines.filter((l) => l.includes("<"));
-    // THE FIX: tagged lines win only when this cue has any.
-    const pick = tagged.length > 0 ? tagged : lines;
+    // What marks the NEW line of a rolling auto-caption cue is a per-WORD
+    // TIMESTAMP — `<00:00:19.039>` — not any angle bracket. Treating every
+    // "<" as that marker silently deleted real speech: an author-written
+    // cue whose first line is `<i>whispering</i>` lost its second line
+    // entirely, and so did a plain sentence containing "a < b". The
+    // transcript still read fluently, so nothing looked wrong.
+    const timed = lines.filter((l) => WORD_TIMESTAMP.test(l));
+    const pick = timed.length > 0 ? timed : lines;
 
     for (const line of pick) {
       const text = stripCueMarkup(line);
@@ -144,9 +149,16 @@ export function vttToText(vtt: string): string {
 }
 
 /** Strip `<...>` timing/`<c>` tags, decode the handful of entities VTT uses. */
+/** `<00:00:19.039>` — the per-word timing tag YouTube's ASR emits. */
+const WORD_TIMESTAMP = /<\d{1,2}:\d{2}:\d{2}[.,]\d{3}>/;
+
 function stripCueMarkup(line: string): string {
   return line
-    .replace(/<[^>]*>/g, "")
+    // Only real cue markup: a timestamp, or an element tag like <i>, </v>,
+    // <c.colorE5E5E5>. A bare "<" in speech ("a < b") is left alone — the
+    // old catch-all `<[^>]*>` would have eaten "< b >" out of a sentence.
+    .replace(/<\d{1,2}:\d{2}:\d{2}[.,]\d{3}>/g, "")
+    .replace(/<\/?[a-zA-Z][^>]*>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")

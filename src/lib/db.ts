@@ -434,6 +434,18 @@ export function setShortsMaxSeconds(channelId: string, seconds: number): void {
  * rather than in SQL (channelAnalytics), so both paths agree on the
  * exact same threshold.
  */
+/**
+ * A short string naming which Shorts setting a derived result was computed
+ * under. Anything CACHED off these statistics has to carry it: the numbers
+ * change the instant the switch is flipped, so a cached artefact from the
+ * other setting describes data that is no longer there. Comparing this
+ * beats trying to remember every cache to purge on a settings change.
+ */
+export function shortsScope(channelId: string | null): string {
+  const t = shortsExclusionThreshold(channelId);
+  return t === null ? "all" : `noshorts${t}`;
+}
+
 export function shortsExclusionThreshold(channelId: string | null): number | null {
   if (!channelId) return null;
   if (!getExcludeShortsSetting(channelId)) return null;
@@ -4733,6 +4745,9 @@ export type HookPlaybookRow = {
   model: string | null;
   hooks_analyzed: number;
   generated_at: number;
+  /** Which Shorts setting this was written under — see `shortsScope`.
+   *  NULL on rows stored before the setting existed. */
+  shorts_scope: string | null;
 };
 
 export function getHookPlaybook(channelId: string): HookPlaybookRow | undefined {
@@ -4748,14 +4763,22 @@ export function upsertHookPlaybook(p: {
   hooks_analyzed: number;
 }): void {
   db.prepare(
-    `INSERT INTO hook_playbooks (channel_id, payload, model, hooks_analyzed, generated_at)
-     VALUES (?, ?, ?, ?, strftime('%s','now'))
+    `INSERT INTO hook_playbooks
+       (channel_id, payload, model, hooks_analyzed, shorts_scope, generated_at)
+     VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
      ON CONFLICT(channel_id) DO UPDATE SET
        payload = excluded.payload,
        model = excluded.model,
        hooks_analyzed = excluded.hooks_analyzed,
+       shorts_scope = excluded.shorts_scope,
        generated_at = excluded.generated_at`
-  ).run(p.channel_id, p.payload, p.model ?? null, p.hooks_analyzed);
+  ).run(
+    p.channel_id,
+    p.payload,
+    p.model ?? null,
+    p.hooks_analyzed,
+    shortsScope(p.channel_id)
+  );
 }
 
 /* ============================================================
@@ -6094,6 +6117,22 @@ try {
   }
   if (hookCols.includes("mejoras")) {
     db.exec(`ALTER TABLE video_hooks RENAME COLUMN mejoras TO improvements`);
+  }
+} catch {
+  /* noop -- table may not exist yet on a brand-new DB */
+}
+
+// Records which "ignore Shorts" setting a stored playbook was written
+// under, so one written under the other setting is treated as absent
+// rather than served with counts the underlying data no longer supports.
+// NULL on rows that predate the column — those read as "the other scope"
+// and simply regenerate once.
+try {
+  const pbCols = (
+    db.prepare(`PRAGMA table_info(hook_playbooks)`).all() as { name: string }[]
+  ).map((c) => c.name);
+  if (!pbCols.includes("shorts_scope")) {
+    db.exec(`ALTER TABLE hook_playbooks ADD COLUMN shorts_scope TEXT`);
   }
 } catch {
   /* noop -- table may not exist yet on a brand-new DB */

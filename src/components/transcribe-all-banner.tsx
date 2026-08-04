@@ -386,10 +386,18 @@ export function TranscribeAllBanner() {
           <div className="font-medium">
             {t.deepgram.missingTitle.replace("{n}", String(preview.missing))}
           </div>
+          {/* The old line always quoted a Deepgram bill. Since captions go
+              first and cost nothing, that figure is now the WORST case —
+              what it would come to if not one of these videos had captions.
+              Showing it flat, and especially showing it to someone with no
+              Deepgram key who cannot be charged at all, reads as a price
+              tag on a free action. */}
           <div className="text-xs text-muted-foreground">
-            {t.deepgram.ctaHint
-              .replace("{duration}", durationLabel)
-              .replace("{amount}", `$${costUsd}`)}
+            {deepgramReady
+              ? t.deepgram.ctaHint
+                  .replace("{duration}", durationLabel)
+                  .replace("{amount}", `$${costUsd}`)
+              : t.deepgram.ctaHintFree.replace("{duration}", durationLabel)}
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
             {deepgramReady
