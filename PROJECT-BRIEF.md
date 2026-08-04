@@ -17,7 +17,7 @@
 
 ## Що це за продукт
 
-**Локальний застосунок** (Next.js 16 + SQLite, вся база — один файл `data/app.db` поруч із проектом),
+**Локальний застосунок** (Next.js 16 + SQLite, вся база — один файл `~/.youtube-channel-ai-vip/app.db` у домашній теці, поза текою проєкту),
 який юзер запускає у себе. Він підключає свої YouTube-канали (скільки завгодно — усе працює
 **по-канально**, перемикач угорі справа), вставляє власні API-ключі на сторінці Integrations
 (YouTube Data API, Claude, опційно Google OAuth для Studio-метрик, Deepgram, Apify) — і отримує:
@@ -222,5 +222,5 @@ Junction-таблиця `competitor_owners` (різні ніші юзера бі
 ---
 
 Репозиторій: [github.com/YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP) ·
-локальний запуск: `npm install` → `npm run dev` (база створиться сама в `data/`) ·
+локальний запуск: `npm install` → `npm run dev` (база створиться сама в `~/.youtube-channel-ai-vip/`) ·
 питання по продукту — до Влада.

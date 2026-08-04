@@ -49,8 +49,10 @@ const SECTIONS: Record<PlatformGuideTopic, string> = {
 
 A local desktop application for YouTube creators and their teams. It
 runs on the user's own machine (Next.js server + a local SQLite
-database file at \`data/yt-channel-ai.db\`). Nothing is hosted in the
-cloud — every API key the user pastes stays on their machine.
+database file at \`~/.youtube-channel-ai-vip/app.db\`, kept in the
+user's home folder so that updating the app cannot delete it). Nothing
+is hosted in the cloud — every API key the user pastes stays on their
+machine.
 
 ## What it's for
 Pulling a YouTube channel's full catalogue into a local database and

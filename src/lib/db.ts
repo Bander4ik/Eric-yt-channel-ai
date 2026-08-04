@@ -2,6 +2,7 @@ import "server-only";
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 
 /**
  * Resolve the project root by walking up from this source file until we
@@ -34,28 +35,186 @@ function findProjectRoot(startDir: string): string {
 
 const PROJECT_ROOT = findProjectRoot(__dirname);
 
-// Where the SQLite database lives. `DATA_DIR` env var still wins (handy
-// for tests / advanced setups). Otherwise we always use
-// `<project-root>/data` so it's the same folder no matter where the
-// user happens to launch `npm run dev` from.
-// Exported because the thumbnail generator writes PNGs next to the DB
-// (data/thumbnails/...) and its file-serving route needs the same root to
-// validate paths against. Everything that touches the data folder must go
-// through this one constant so DATA_DIR overrides keep working.
-export const DATA_DIR = process.env.DATA_DIR
-  ? path.resolve(process.env.DATA_DIR)
-  : path.join(PROJECT_ROOT, "data");
-const DB_PATH = path.join(DATA_DIR, "app.db");
-
-// Detect Next.js production-build phase early — needed both for the :memory:
-// DB swap below AND to skip on-disk data-dir creation here. During
-// `next build` (Turbopack) `__dirname` resolves to a virtual "/ROOT/..."
-// path, so findProjectRoot can't locate package.json and DATA_DIR points at
-// an unwritable location; an unconditional mkdir there crashed page-data
-// collection. We use a throwaway :memory: DB in build phase anyway, so the
-// on-disk folder isn't needed then — skip it. Runtime (dev/start) is
-// unaffected: isBuildPhase is false, so the dir is created exactly as before.
+// Detect Next.js production-build phase early — needed by the :memory: DB
+// swap below, by the data-dir resolution right here, and by the on-disk
+// mkdir further down. During `next build` (Turbopack) `__dirname` resolves
+// to a virtual "/ROOT/..." path, so findProjectRoot can't locate
+// package.json and the legacy data dir points at an unwritable location; an
+// unconditional mkdir there crashed page-data collection. We use a
+// throwaway :memory: DB in build phase anyway, so no on-disk folder is
+// needed then — and no migration must run either. Runtime (dev/start) is
+// unaffected: isBuildPhase is false, so everything behaves normally.
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
+/**
+ * The pre-2026-08 location: a `data` folder INSIDE the project folder.
+ * That was inherited from the Railway deployment (Luka/Filip/Yura), where
+ * a volume gets mounted at `/app/data` and DATA_DIR points at it. On a
+ * server that's correct. On a client's laptop it was a trap: updating by
+ * ZIP means "delete the project folder and put the new one in its place",
+ * which deletes the database along with it. A client lost every key,
+ * channel and transcript that way. Every one of our nine conveyers already
+ * keeps its data in the user's home folder for exactly this reason.
+ */
+const LEGACY_DATA_DIR = path.join(PROJECT_ROOT, "data");
+
+/**
+ * Where the SQLite database lives, in priority order:
+ *
+ *   1. `DATA_DIR` env var — unchanged, still wins. This is what the
+ *      Railway deployments set, so servers are completely unaffected by
+ *      the move below.
+ *   2. `~/.youtube-channel-ai-vip` — the default for a local install.
+ *      Outside the project folder, so replacing the project folder during
+ *      an update cannot touch it.
+ *   3. `<project>/data` — only if the home folder turns out to be
+ *      unusable (unwritable, exotic environment). Falling back to the old
+ *      behaviour keeps a weird machine working instead of crashing it.
+ *
+ * Exported because the thumbnail generator writes PNGs next to the DB
+ * (thumbnails/...) and its file-serving route needs the same root to
+ * validate paths against. Everything that touches the data folder must go
+ * through this one constant so DATA_DIR overrides keep working.
+ */
+function resolveDataDir(): string {
+  if (process.env.DATA_DIR) return path.resolve(process.env.DATA_DIR);
+
+  // The build phase never opens a real DB (see the :memory: swap below)
+  // and must not create folders or migrate anything.
+  if (isBuildPhase) return LEGACY_DATA_DIR;
+
+  let home: string;
+  try {
+    home = path.join(os.homedir(), ".youtube-channel-ai-vip");
+    fs.mkdirSync(home, { recursive: true });
+    // Prove we can actually write there before betting the database on
+    // it — `mkdirSync` succeeding on an existing read-only folder isn't
+    // proof of anything. The pid keeps two copies started at the same
+    // moment from deleting each other's probe and both concluding the
+    // folder is unwritable.
+    const probe = path.join(home, `.write-probe-${process.pid}`);
+    fs.writeFileSync(probe, "");
+    fs.unlinkSync(probe);
+  } catch {
+    return LEGACY_DATA_DIR;
+  }
+
+  // One-time move for everyone who installed before this change. Only
+  // ever runs when the new location is still empty, so it can never
+  // overwrite live data — if both locations have a database, the new one
+  // wins and the old one is left untouched.
+  if (
+    !fs.existsSync(path.join(home, "app.db")) &&
+    fs.existsSync(path.join(LEGACY_DATA_DIR, "app.db")) &&
+    !migrateLegacyData(LEGACY_DATA_DIR, home)
+  ) {
+    // Migration failed and said so on the console. Keep using the old
+    // folder rather than silently starting the user from scratch.
+    return LEGACY_DATA_DIR;
+  }
+
+  return home;
+}
+
+/**
+ * Copy an existing installation's data out of the project folder.
+ *
+ * The database is copied with `VACUUM INTO` rather than a file copy: it
+ * produces a single consistent snapshot that already folds in whatever
+ * is sitting in the `-wal` file, so it is correct even if the old app is
+ * still running in another window. The snapshot is written to a temp name
+ * and only renamed into place after it opens and passes an integrity
+ * check — a half-written database must never end up looking like the
+ * real one.
+ *
+ * The original is left exactly where it is. Deliberate: it costs ~10 MB
+ * and it means a failed or unwanted migration is always recoverable.
+ */
+function migrateLegacyData(legacy: string, home: string): boolean {
+  // Per-process temp name: two copies launched at once each build their
+  // own snapshot instead of writing over each other's half-finished one.
+  const tmp = path.join(home, `app.db.migrating-${process.pid}`);
+  try {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* no leftover from an earlier interrupted attempt */
+    }
+
+    // Opened read-write on purpose: SQLite cannot open a WAL-mode
+    // database read-only unless the -shm file already exists, which is
+    // exactly the case we can't rely on. We only read from it.
+    const source = new Database(path.join(legacy, "app.db"));
+    try {
+      source.pragma("busy_timeout = 10000");
+      source.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+    } finally {
+      source.close();
+    }
+
+    const check = new Database(tmp, { readonly: true });
+    try {
+      const verdict = check.pragma("integrity_check", { simple: true });
+      if (verdict !== "ok") throw new Error(`integrity_check said: ${verdict}`);
+    } finally {
+      check.close();
+    }
+
+    fs.renameSync(tmp, path.join(home, "app.db"));
+
+    // Generated thumbnails, uploaded logos and fonts live beside the DB.
+    // `app.db*` is skipped — the snapshot above already replaced it, and
+    // copying a stale -wal on top of it would be actively harmful.
+    for (const entry of fs.readdirSync(legacy)) {
+      if (entry.startsWith("app.db")) continue;
+      const destination = path.join(home, entry);
+      if (fs.existsSync(destination)) continue;
+      fs.cpSync(path.join(legacy, entry), destination, { recursive: true });
+    }
+
+    fs.writeFileSync(
+      path.join(legacy, "READ-ME-FIRST.txt"),
+      [
+        "This folder is no longer used by YouTube Channel AI VIP.",
+        "",
+        "Your data was moved to:",
+        `  ${home}`,
+        "",
+        "It now lives outside the project folder, so updating the app",
+        "(replacing this project folder with a newer one) can no longer",
+        "delete your API keys, channels or transcripts.",
+        "",
+        "What is left here is the copy from the moment of the move. It is",
+        "safe to delete once you have confirmed the app still shows your",
+        "channels and keys — but there is no hurry, and keeping it costs",
+        "nothing but disk space.",
+        "",
+      ].join("\n")
+    );
+
+    console.log(
+      `[data] Moved your data out of the project folder to ${home} — ` +
+        `updating the app can no longer delete it. The previous copy is ` +
+        `still in ${legacy} and is safe to remove.`
+    );
+    return true;
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* nothing to clean up */
+    }
+    console.error(
+      `[data] Could not move your data to ${home}, so the app is still ` +
+        `using ${legacy}. Nothing was lost. Reason:`,
+      err
+    );
+    return false;
+  }
+}
+
+export const DATA_DIR = resolveDataDir();
+const DB_PATH = path.join(DATA_DIR, "app.db");
 
 if (!isBuildPhase && !fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });

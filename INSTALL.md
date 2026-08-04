@@ -145,7 +145,7 @@ You should see the app's dashboard. It'll be empty (no channels yet) — that's 
 
 ## Part 4 — Add API keys (Integrations page)
 
-The app needs API keys for the external services it talks to. Every key is stored **locally in `data/app.db`** — never uploaded anywhere. You enter each one once and forget about it.
+The app needs API keys for the external services it talks to. Every key is stored **locally in `~/.youtube-channel-ai-vip/app.db`** — in your home folder, never uploaded anywhere. You enter each one once and forget about it.
 
 Open the running app (`http://localhost:3000`) and click **Integrations** in the left sidebar.
 
@@ -306,7 +306,7 @@ How you update depends on which option you used in Part 2.
 
 | Thing | Where |
 |---|---|
-| Your data (DB, API keys, transcripts) | `data/app.db` inside the project folder |
+| Your data (DB, API keys, transcripts) | `~/.youtube-channel-ai-vip/app.db` in your home folder — **not** in the project folder |
 | The app itself | The project folder you extracted/cloned |
 | The "server" (when running) | Running in the terminal window opened by `start.bat`/`start.command` |
 | The "website" you interact with | `http://localhost:3000` in your browser |
@@ -319,9 +319,10 @@ How you update depends on which option you used in Part 2.
 
 **This should NOT happen** with this version — the database uses `synchronous=FULL` and `WAL` mode, plus a graceful-shutdown handler that flushes everything to disk before the process exits. If it does happen:
 
-1. Check that the `data/` folder exists in your project folder and contains an `app.db` file.
-2. If `app.db` is there but the app shows no keys → most likely the app started from a different directory and created a fresh DB elsewhere. **Always launch via `start.bat` / `start.command`** (those scripts `cd` into the right folder first). Don't run `npm run dev` manually from some other terminal location.
+1. Check that `~/.youtube-channel-ai-vip/` exists in your home folder and contains an `app.db` file. (macOS: `/Users/<you>/.youtube-channel-ai-vip` — it starts with a dot, so Finder hides it; press **Cmd + Shift + .** to show hidden folders. Windows: `C:\Users\<you>\.youtube-channel-ai-vip`.)
+2. If `app.db` is there but the app shows no keys → check whether a `DATA_DIR` variable is set in a `.env` file; that overrides the location and the app will be reading a different database.
 3. If `app.db` keeps getting recreated empty → there might be an antivirus or sync service (OneDrive, iCloud) eating the WAL files. Move the project out of OneDrive/iCloud-synced folders.
+4. If you installed before August 2026 and just updated, look for an old `data/` folder inside the project — the app moves it across on first launch and leaves a `READ-ME-FIRST.txt` behind saying where it went.
 
 ### "Port 3000 is already in use."
 
@@ -355,21 +356,25 @@ System Preferences → Privacy & Security → scroll down → click **Open Anywa
 
 ## Backup your data
 
-The single most important file is `data/app.db`. If you lose it, you lose your API keys, OAuth tokens, transcripts, and chat history.
+The single most important file is `~/.youtube-channel-ai-vip/app.db`. If you lose it, you lose your API keys, OAuth tokens, transcripts, and chat history.
 
-**Manual backup**: every week or so, copy `data/app.db` to a safe place (Dropbox, USB stick, wherever). To restore: replace the current `data/app.db` with the backup file while the app is **stopped**.
+Updating the app can no longer touch it — it lives outside the project folder, so replacing the project folder leaves it alone. A backup still protects you from the things an update never could: a dead disk, a mistaken delete, a machine change.
 
-Don't try to back up the `data/` folder while the app is running — SQLite uses `.db-wal` and `.db-shm` helper files that are part of an in-progress transaction. Stop the app, then copy. Two seconds of downtime, full integrity.
+**Manual backup**: every week or so, copy `~/.youtube-channel-ai-vip/app.db` to a safe place (Dropbox, USB stick, wherever). To restore: replace the current `app.db` with the backup file while the app is **stopped**.
+
+Don't try to back it up while the app is running — SQLite uses `.db-wal` and `.db-shm` helper files that are part of an in-progress transaction. Stop the app, then copy. Two seconds of downtime, full integrity.
 
 ---
 
 ## What if I need to fully reset?
 
 1. Stop the app.
-2. Delete the `data/` folder inside the project directory.
-3. Launch the app again — it creates a fresh empty `data/app.db`.
+2. Delete the `~/.youtube-channel-ai-vip/` folder in your home folder. (It starts with a dot, so Finder hides it — press **Cmd + Shift + .** to show it.)
+3. Launch the app again — it creates a fresh empty database.
 
 You'll need to re-enter all API keys and reconnect channels. The app code, dependencies, and project files are untouched.
+
+> Deleting the project folder does **not** reset anything any more — your data is somewhere else now, and the app will find it again as soon as you launch a new copy.
 
 ---
 

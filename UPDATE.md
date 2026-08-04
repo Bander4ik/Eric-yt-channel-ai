@@ -1,10 +1,19 @@
 # How to update the app
 
-When the developer ships fixes or new features, you'll need to download the new version of the project files. Your saved data (API keys, channels, transcripts, chat history, etc.) is kept separately in a folder called `data/` and **does not get touched** during an update — as long as you follow the steps below.
+When the developer ships fixes or new features, you'll need to download the new version of the project files. Your saved data — API keys, channels, competitors, transcripts, chat history — lives in a separate folder in your **home** folder (`~/.youtube-channel-ai-vip`), not in the project folder. Replacing, renaming or deleting the project folder cannot touch it.
 
 This guide assumes you've **never written code, never used a terminal, never used GitHub**. Every step is spelled out. Take your time — a normal update takes 5-10 minutes.
 
-> **If anything looks weird or doesn't match what's on your screen, STOP and screenshot it.** Send the screenshot to the developer with a short note saying which step you're on. Don't guess — most steps are reversible, but one wrong move when copying the `data` folder could lose your settings.
+> **If anything looks weird or doesn't match what's on your screen, STOP and screenshot it.** Send the screenshot to the developer with a short note saying which step you're on. Don't guess.
+
+### If you installed before August 2026, read this once
+
+Older versions kept your data in a `data` folder **inside** the project — which meant that deleting the project folder deleted everything with it. That is fixed, but the move happens on the first launch of this version:
+
+- Start the new version **once from your existing folder** (or copy the old `data` folder into the new one, as the old guide said) so the app can see your data and move it out to your home folder. It prints a line in the terminal saying where it went, and leaves a `READ-ME-FIRST.txt` in the old spot.
+- After that one launch, you never have to think about it again — update however you like.
+
+If you already deleted an old project folder and your data went with it, don't start re-entering things yet: message the developer first, it's often recoverable.
 
 ---
 
@@ -12,7 +21,9 @@ This guide assumes you've **never written code, never used a terminal, never use
 
 Open the folder where your project currently lives. **If the path contains `OneDrive`, `iCloud Drive`, `Dropbox`, or `Google Drive`** — you need to move it before doing anything else.
 
-**Why this matters:** cloud-sync services constantly copy file changes to the internet. The app uses a database file (called `app.db`) that gets touched many times per minute while the app is running. Sync services can grab the file at a bad moment and corrupt it — and then your API keys, your transcripts, your chat history are gone. The app will look empty even though you set it up correctly.
+**Why this matters:** cloud-sync services constantly copy file changes to the internet, and they fight with the installer — it writes thousands of small files into `node_modules`, and OneDrive grabbing them mid-write is the single most common cause of an install that fails with permission errors or an app that behaves strangely afterwards.
+
+(Your database is no longer at risk from this — it lives in your home folder now, outside anything OneDrive syncs. The install itself still is.)
 
 **How to fix:**
 
@@ -51,7 +62,7 @@ You can leave the browser tab open — the app's webpage will just say "site can
 
 ### Step 2. Rename your current project folder
 
-We're keeping the old folder around for a few minutes — there's one folder inside it that we need to copy over.
+Nothing of yours is inside it any more, so this is purely a safety net: if the new version misbehaves you can go back to the old one in five seconds.
 
 1. Open **File Explorer**.
 2. Navigate to where your project folder lives.
@@ -74,18 +85,13 @@ We're keeping the old folder around for a few minutes — there's one folder ins
 3. Click **Extract**. A new folder appears next to the ZIP, called `YouTube-Channel-AI-VIP-main`.
 4. **Move this new folder to the same safe location as the `-old` one.** (Drag-and-drop is fine.) You should now have both folders side by side:
    - `YouTube-Channel-AI-VIP-main` (the new one — fresh code)
-   - `YouTube-Channel-AI-VIP-main-old` (the old one — still has your data)
+   - `YouTube-Channel-AI-VIP-main-old` (the old one — spare copy of the code, nothing of yours in it)
 
-### Step 5. Bring your saved data across (CRITICAL — don't skip)
+### Step 5. Nothing to copy
 
-This is the most important step. Without it, the new version starts blank — no API keys, no channels, no transcripts.
+There used to be a step here about copying a `data` folder across, and skipping it cost people everything they'd set up. It's gone: your data isn't in the project folder any more, so there's nothing to move. Straight on to the next step.
 
-1. Open the **OLD** folder (`YouTube-Channel-AI-VIP-main-old`).
-2. Inside it, look for a folder called exactly **`data`** (four lowercase letters). This is where everything you've set up is stored.
-3. Right-click on the `data` folder → **Copy** (or just press **Ctrl+C**).
-4. Now navigate to the **NEW** folder (`YouTube-Channel-AI-VIP-main`).
-5. Paste it in: right-click in an empty area inside the new folder → **Paste** (or **Ctrl+V**).
-6. If Windows asks: **"The destination already has a folder named 'data'. Do you want to merge?"** or **"Replace the files in the destination?"** → click **Replace the files in the destination** (or **Yes**). The fresh ZIP comes with an empty `data` folder; we're overwriting it with your real one.
+(The one exception is the very first launch after upgrading from a pre-August-2026 version — see the note at the top of this guide.)
 
 ### Step 6. Re-install dependencies (just in case)
 
@@ -127,7 +133,7 @@ Your browser caches the app's code to make it load faster — but right after an
 
 If all three look right, **delete the `-old` folder** to free up disk space. You're done!
 
-If something is missing, **stop and don't delete the `-old` folder yet**. Screenshot what you see and ask the developer — your data is still safe inside the `-old` folder; we just need to figure out where it went on the way over.
+If something is missing, screenshot what you see and ask the developer before changing anything. Your data is still sitting in `~/.youtube-channel-ai-vip` regardless of what the screen says — a blank-looking app after an update is almost always the browser showing you a cached page (Step 8) or the app reading a different folder, not data that's gone.
 
 ---
 
@@ -151,7 +157,7 @@ Find GitHub Desktop in your Start menu and open it.
    - If it says **"Pull origin"** with a downward arrow and a number (e.g. "Pull origin · 3 commits behind") → there are new changes. Click it.
    - If it says **"Fetch origin"** unchanged with no number → you're already up to date. Nothing else to do, skip to Step 5.
 
-GitHub Desktop downloads the new files into your existing project folder. Your `data` folder is automatically left alone — no manual copying needed (GitHub Desktop knows not to touch it).
+GitHub Desktop downloads the new files into your existing project folder. Your data isn't in there, so there is nothing to preserve.
 
 ### Step 4. Re-install dependencies (just in case)
 
@@ -167,7 +173,7 @@ Double-click `start.bat`. The app launches like before.
 
 ### Step 7. Verify your data
 
-Same as Path A Step 9. Check Integrations, Dashboard, a video. Everything should be intact because we never touched the `data` folder.
+Same as Path A Step 9. Check Integrations, Dashboard, a video. Everything should be intact — an update only ever replaces code.
 
 You're done!
 
@@ -175,13 +181,13 @@ You're done!
 
 ## Recommended: switch from ZIP to GitHub Desktop
 
-If you've been using Path A (ZIP downloads), please consider switching to Path B (GitHub Desktop) for future updates. The setup takes about 10 minutes once, and after that every update is **3 clicks** instead of the 9 steps above. You also won't have to remember to copy the `data` folder — GitHub Desktop handles that automatically.
+If you've been using Path A (ZIP downloads), please consider switching to Path B (GitHub Desktop) for future updates. The setup takes about 10 minutes once, and after that every update is **3 clicks** instead of the 8 steps above.
 
 ### Why switch?
 
 - **One-click updates.** Open GitHub Desktop → click Fetch → click Pull. That's it.
-- **No risk of losing your data.** With ZIP updates, if you forget Step 5 (copy `data` across) you lose everything. GitHub Desktop never touches that folder.
 - **No re-download needed.** It only fetches what changed, not the whole project. Usually a few KB instead of 50+ MB.
+- **Nothing to unzip, move, or rename.** Fewer moving parts is fewer things to get wrong.
 - **You get to keep your current data, settings, everything.** The switch doesn't reset anything.
 
 ### How to switch
@@ -205,14 +211,11 @@ You can sign in with a GitHub account or skip the sign-in step — both work for
 4. **Local path**: this is where the project will live on your computer. The default (something like `C:\Users\<your-name>\Documents\GitHub\YouTube-Channel-AI-VIP`) is fine **as long as Documents is not OneDrive-synced**. If it is, click **Choose...** and pick a non-synced location instead (e.g. `C:\YouTube-Channel-AI-VIP-git`).
 5. Click **Clone**. GitHub Desktop downloads the project. Takes 10-30 seconds.
 
-#### Step 3. Bring your data into the new clone
+#### Step 3. Nothing to bring across
 
-You currently have your data inside your old ZIP-installed project folder. We need to move it to the new GitHub Desktop folder so the new version sees it.
+Your data lives in your home folder, not in the project — the fresh clone will find it on its own.
 
-1. Open **File Explorer**.
-2. Open your **old** project folder (the one you've been using). Find the **`data`** folder inside it. Copy it (right-click → **Copy**, or **Ctrl + C**).
-3. Open your **new** project folder (the one GitHub Desktop just cloned). Paste the `data` folder in (right-click → **Paste**, or **Ctrl + V**).
-4. If Windows asks to merge or replace → click **Replace the files in the destination**.
+Only if you're coming from a version older than August 2026 and have **never launched the new one**: start the app once from your old folder first, so it can move your data out. Then come back here.
 
 #### Step 4. Install + start in the new folder
 
@@ -222,7 +225,7 @@ You currently have your data inside your old ZIP-installed project folder. We ne
 
 #### Step 5. Verify and clean up
 
-Check that Integrations, Dashboard, and a video all show your data. If everything is intact, you can delete your old ZIP-installed project folder (the one you copied `data` FROM in step 3).
+Check that Integrations, Dashboard, and a video all show your data. If everything is intact, you can delete your old ZIP-installed project folder.
 
 From now on, every update is just:
 1. Close the terminal window (stop the app)
@@ -262,10 +265,13 @@ You probably skipped the hard-refresh. Click the app's browser tab, then press *
 
 ### "My API keys / channels are missing after the update"
 
-Two possibilities:
+Don't re-enter anything yet — your data is almost certainly still there. In order of likelihood:
 
-1. **You forgot to copy the `data` folder across.** Don't panic — your data is still in the `-old` folder (Path A). Stop the app, copy the `data` folder from `-old` into the new folder (overwrite/replace when asked), restart `start.bat`, hard-refresh the browser.
-2. **OneDrive corrupted the database.** If your project is inside `OneDrive\...`, this is the cause. See the "Before you start" section at the top of this guide — move the project to a non-synced location.
+1. **The browser is showing you a cached page.** Hard-refresh: **Ctrl + Shift + R** (**Cmd + Shift + R** on Mac). This is the most common cause by a wide margin.
+2. **You're upgrading from a pre-August-2026 version and launched a fresh folder that never saw your old data.** Start the app once from your **old** folder instead so it can move your data across, then go back to the new one.
+3. **A `DATA_DIR` setting is pointing the app somewhere else.** Check for a `.env` file in the project folder.
+
+Check that `~/.youtube-channel-ai-vip/app.db` exists and isn't tiny (it should be megabytes, not kilobytes). If it's there, nothing is lost — message the developer with a screenshot rather than starting over.
 
 ### "Port 3000 is already in use" (or "EADDRINUSE")
 
@@ -280,11 +286,10 @@ You have another `start.bat` running somewhere, or another app is using that por
 2. Rename current folder to add `-old`
 3. Download fresh ZIP from [github.com/YT-Wizards/YouTube-Channel-AI-VIP](https://github.com/YT-Wizards/YouTube-Channel-AI-VIP) (green Code button → Download ZIP)
 4. Extract to the same safe location as `-old`
-5. Copy `data` folder from `-old` into the new folder
-6. Run `install.bat` → wait for "Installation complete!"
-7. Run `start.bat`
-8. **Ctrl + Shift + R** in the browser
-9. Verify data is intact, delete `-old`
+5. Run `install.bat` → wait for "Installation complete!"
+6. Run `start.bat`
+7. **Ctrl + Shift + R** in the browser
+8. Verify data is intact, delete `-old`
 
 **Update via GitHub Desktop (Path B):**
 1. Stop the app
@@ -295,6 +300,6 @@ You have another `start.bat` running somewhere, or another app is using that por
 
 **Never:**
 - Update without closing the running app first
-- Skip copying the `data` folder (Path A)
 - Skip the hard-refresh (`Ctrl + Shift + R`)
 - Keep the project inside OneDrive / iCloud / Dropbox
+- Delete `~/.youtube-channel-ai-vip` — *that* folder is your data. The project folder is just code and can be replaced freely.

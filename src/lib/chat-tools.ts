@@ -1319,7 +1319,7 @@ export function buildSystemPrompt(
     `- **Background jobs** — the app runs three batch jobs (channel sync, bulk transcribe, bulk comment sync, bulk hook analysis) that show progress banners on the relevant page. If a user asks "why is nothing happening on Hook Lab" the most likely answer is a running job; suggest they wait or check the banner.`,
     ``,
     `**Data flow under the hood:**`,
-    `- SQLite at \`<project>/data/yt-channel-ai.db\` is the source of truth. Channel info, videos, transcripts, comments, video_hooks (Hook Lab output), comment_analysis (per-video AI summary), competitor_videos + competitor_alerts, hooks_library entries — all in there.`,
+    `- SQLite at \`~/.youtube-channel-ai-vip/app.db\` (the user's home folder, outside the project) is the source of truth. Channel info, videos, transcripts, comments, video_hooks (Hook Lab output), comment_analysis (per-video AI summary), competitor_videos + competitor_alerts, hooks_library entries — all in there.`,
     `- The app fetches YouTube data via the user's YouTube Data API v3 key (channel sync, comment sync, search, trending, niche explorer).`,
     `- Deeper Studio-grade metrics come from the YouTube Analytics API via Google OAuth (retention, traffic sources, demographics, revenue).`,
     `- Transcription goes through Deepgram (yt-dlp pulls audio locally, streams to Deepgram, caches in the transcripts table).`,
