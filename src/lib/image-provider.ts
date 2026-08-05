@@ -345,6 +345,48 @@ function extractGeminiUsage(
 // OpenAI
 // ---------------------------------------------------------------------------
 
+/**
+ * What a buffer actually is, read from its first bytes.
+ *
+ * Every mime type we hold for a reference image was taken on trust: from
+ * a Content-Type header the CDN sent, or from a filename someone typed.
+ * Neither has looked at the file. That is fine right up until a provider
+ * checks, which is what OpenAI does with uploads.
+ *
+ * Returns null for anything unrecognised, so the caller keeps its own
+ * guess rather than being handed a worse one.
+ */
+function sniffImageType(
+  bytes: Buffer
+): { mimeType: string; ext: string } | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(PNG_MAGIC)) {
+    return { mimeType: "image/png", ext: ".png" };
+  }
+  // JPEG: SOI marker, then any APPn/SOF segment.
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { mimeType: "image/jpeg", ext: ".jpg" };
+  }
+  // WebP is a RIFF container: "RIFF" .... "WEBP".
+  if (
+    bytes.length >= 12 &&
+    bytes.toString("ascii", 0, 4) === "RIFF" &&
+    bytes.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return { mimeType: "image/webp", ext: ".webp" };
+  }
+  return null;
+}
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** Fallback when the bytes are unrecognised — mirrors the stored type. */
+function extensionForMime(mimeType: string): string {
+  const mime = mimeType.toLowerCase();
+  if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg";
+  if (mime.includes("webp")) return ".webp";
+  return ".png";
+}
+
 async function generateOpenAI(
   opts: GenerateImagesOpts,
   index: number
@@ -364,10 +406,23 @@ async function generateOpenAI(
         model: opts.model,
         prompt,
         size,
+        // OpenAI is the only provider we UPLOAD reference files to — kie
+        // and Gemini take URLs or inline data — and it checks that the
+        // name, the declared type and the actual bytes agree. Every
+        // reference used to go up as "ref-N.png" whatever it really was,
+        // and a YouTube thumbnail is almost always a JPEG. Both the name
+        // and the type now come from the bytes themselves, so neither can
+        // contradict the file it is attached to.
         image: await Promise.all(
-          refs.map((r, i) =>
-            toFile(r.bytes, `ref-${i}.png`, { type: r.mimeType })
-          )
+          refs.map((r, i) => {
+            const kind = sniffImageType(r.bytes) ?? {
+              mimeType: r.mimeType,
+              ext: extensionForMime(r.mimeType),
+            };
+            return toFile(r.bytes, `ref-${i}${kind.ext}`, {
+              type: kind.mimeType,
+            });
+          })
         ),
       })
     : await client.images.generate({ model: opts.model, prompt, size });

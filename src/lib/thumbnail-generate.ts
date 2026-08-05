@@ -337,6 +337,13 @@ export async function runGeneration(
         channelId,
         runId,
         index: i,
+        // Which provider and model, always. A provider's own wording is
+        // passed through verbatim here, and the same sentence can mean
+        // completely different things depending on who said it — the
+        // report that started this said only "Invalid SVG image".
+        provider,
+        model: providerRow.model ?? "",
+        referencesSent: styleRefs.length + characterRefs.length,
         error: lastError,
       });
     }
