@@ -268,15 +268,54 @@ export async function runGeneration(
 
       let finalRel: string;
       let overlayJson: string | null = null;
+      let warning: string | null = null;
       if (modelRendersText) {
         // The model drew the headline itself — compositing on top would
         // double the text.
         finalRel = baseRel;
       } else {
-        const composited = await renderOverlay(image.bytes, overlaySpec, fontAbs);
-        finalRel = relPath(channelId, runId, `${i}-final.png`);
-        fs.writeFileSync(path.join(DATA_DIR, finalRel), composited);
-        overlayJson = JSON.stringify(overlaySpec);
+        try {
+          const composited = await renderOverlay(
+            image.bytes,
+            overlaySpec,
+            fontAbs
+          );
+          finalRel = relPath(channelId, runId, `${i}-final.png`);
+          fs.writeFileSync(path.join(DATA_DIR, finalRel), composited);
+          overlayJson = JSON.stringify(overlaySpec);
+        } catch (overlayErr) {
+          // The image exists and has already been paid for. Losing it
+          // because a caption could not be drawn is the worst possible
+          // trade — a client hit exactly this and saw four failures with
+          // four perfectly good covers sitting on disk beside them. Hand
+          // the background over as the result and say what is missing;
+          // "Re-render overlay" can add the text later for free once the
+          // underlying cause is fixed.
+          finalRel = baseRel;
+          warning =
+            "Background generated, but the headline could not be drawn on it: " +
+            (overlayErr instanceof Error
+              ? overlayErr.message
+              : String(overlayErr));
+          log.warn("thumbnails", "Overlay failed, keeping the background", {
+            channelId,
+            runId,
+            index: i,
+            provider,
+            model: providerRow.model ?? "",
+            // What the provider SAID it sent, how much arrived, and how
+            // the payload actually starts. "Invalid SVG image" means the
+            // bytes began with SVG markup that would not parse -- a
+            // truncated download and a provider answering with vector
+            // markup look identical until you see the head of it, and
+            // without these three fields the next report is another
+            // guessing game.
+            mimeType: image.mimeType,
+            bytes: image.bytes.length,
+            head: image.bytes.subarray(0, 80).toString("utf8"),
+            error: warning,
+          });
+        }
       }
 
       createThumbnailVariant({
@@ -285,6 +324,7 @@ export async function runGeneration(
         basePath: baseRel,
         finalPath: finalRel,
         overlayJson,
+        warning,
       });
       done++;
     } catch (err) {

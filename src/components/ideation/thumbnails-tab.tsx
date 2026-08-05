@@ -121,6 +121,8 @@ type Variant = {
   final_path: string | null;
   overlay_json: string | null;
   error: string | null;
+  /** Image is fine, something on top of it is not — see `warning` in db.ts. */
+  warning: string | null;
   picked: number;
 };
 
@@ -1632,6 +1634,13 @@ function VariantCard({
             vertical ? "mx-auto max-h-[460px] w-auto" : "w-full"
           )}
         />
+      )}
+
+      {variant.warning && (
+        <div className="flex items-start gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{variant.warning}</span>
+        </div>
       )}
 
       {overlay && (

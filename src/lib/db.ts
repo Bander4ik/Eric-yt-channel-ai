@@ -6154,6 +6154,12 @@ db.exec(`
     final_path TEXT,
     overlay_json TEXT,
     error TEXT,
+    -- Set when the image itself is fine but something on top of it went
+    -- wrong -- today, only the headline failing to draw. Deliberately
+    -- separate from the error column: an error means there is nothing to
+    -- show, and the UI hides the variant entirely when it is set. A paid
+    -- image must never disappear because a caption could not be added.
+    warning TEXT,
     picked INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     FOREIGN KEY (run_id) REFERENCES thumbnail_runs(id) ON DELETE CASCADE
@@ -6196,6 +6202,18 @@ try {
   // of living in the log where nobody looks.
   if (!runCols.includes("credits")) {
     db.exec(`ALTER TABLE thumbnail_runs ADD COLUMN credits INTEGER`);
+  }
+  // Same story for `warning` on variants: it arrived after a client hit
+  // a run where all four images generated and were paid for, and every
+  // one of them was then thrown away because the headline could not be
+  // drawn on top.
+  const variantCols = (
+    db.prepare(`PRAGMA table_info(thumbnail_variants)`).all() as {
+      name: string;
+    }[]
+  ).map((c) => c.name);
+  if (!variantCols.includes("warning")) {
+    db.exec(`ALTER TABLE thumbnail_variants ADD COLUMN warning TEXT`);
   }
 } catch {
   /* noop -- table may not exist yet on a brand-new DB */
@@ -6870,12 +6888,13 @@ export function createThumbnailVariant(input: {
   finalPath?: string | null;
   overlayJson?: string | null;
   error?: string | null;
+  warning?: string | null;
 }): number {
   const info = db
     .prepare(
       `INSERT INTO thumbnail_variants
-         (run_id, idx, base_path, final_path, overlay_json, error, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+         (run_id, idx, base_path, final_path, overlay_json, error, warning, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.runId,
@@ -6884,6 +6903,7 @@ export function createThumbnailVariant(input: {
       input.finalPath ?? null,
       input.overlayJson ?? null,
       input.error ?? null,
+      input.warning ?? null,
       Math.floor(Date.now() / 1000)
     );
   return Number(info.lastInsertRowid);
