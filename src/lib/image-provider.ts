@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import OpenAI, { toFile } from "openai";
 import {
   DEFAULT_ASPECT,
@@ -71,8 +72,9 @@ export interface ReferenceImage {
   /**
    * Public URL this reference came from, when it has one. kie.ai accepts
    * reference images only as URLs, and our winners are public YouTube
-   * thumbnails, so they can be passed straight through. Locally uploaded
-   * brand assets have no URL and are skipped on that provider.
+   * thumbnails, so they can be passed straight through. A locally
+   * uploaded brand asset has none, so kie's own file API is used to make
+   * one — see uploadToKie.
    */
   sourceUrl?: string;
 }
@@ -566,14 +568,93 @@ export function buildKieInput(
   };
 }
 
+/**
+ * kie's own file store, used to give a locally uploaded brand asset the
+ * URL that kie's generation endpoints insist on.
+ *
+ * The host is deliberately NOT the one in kie's published docs: that one
+ * (api.kie.ai) answers nothing at all — measured against the live service
+ * on 2026-08-06, with the same key that works here. Trust the measurement
+ * over the documentation if they ever disagree again.
+ */
+const KIE_UPLOAD_URL = "https://kieai.redpandaai.co/api/file-base64-upload";
+
+/**
+ * Uploaded files live for 3 days per kie's docs. We cache the resulting
+ * URL for two, keyed by the bytes themselves, so a four-variant run
+ * uploads the same character once instead of four times — and a run an
+ * hour later doesn't upload it again either.
+ */
+const KIE_UPLOAD_TTL_MS = 2 * 24 * 60 * 60 * 1000;
+const kieUploads = new Map<string, { url: string; at: number }>();
+
+async function uploadToKie(
+  ref: ReferenceImage,
+  apiKey: string
+): Promise<string> {
+  const key = createHash("sha256").update(ref.bytes).digest("hex");
+  const cached = kieUploads.get(key);
+  if (cached && Date.now() - cached.at < KIE_UPLOAD_TTL_MS) return cached.url;
+
+  const res = await fetch(KIE_UPLOAD_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      base64Data: `data:${ref.mimeType};base64,${ref.bytes.toString("base64")}`,
+      uploadPath: "images",
+      fileName: `brand-${key.slice(0, 16)}${extensionForMime(ref.mimeType)}`,
+    }),
+  });
+  if (!res.ok) {
+    throw new ImageProviderError(
+      `kie.ai rejected the brand asset upload (${res.status}): ${truncate(
+        await res.text()
+      )}`,
+      "kie",
+      res.status
+    );
+  }
+  const json = (await res.json()) as {
+    code?: number;
+    msg?: string;
+    data?: { downloadUrl?: string };
+  };
+  const url = json.data?.downloadUrl;
+  if (!url) {
+    // Like createTask, this endpoint answers HTTP 200 with a non-200
+    // `code` for quota and auth problems, so the body has to be read.
+    throw new ImageProviderError(
+      `kie.ai returned no URL for the brand asset (code ${
+        json.code ?? "?"
+      }): ${json.msg ?? "no message"}`,
+      "kie"
+    );
+  }
+  kieUploads.set(key, { url, at: Date.now() });
+  return url;
+}
+
 async function generateKie(
   opts: GenerateImagesOpts,
   index: number
 ): Promise<GeneratedImage> {
   const { style, character } = cappedRefs(opts);
-  const refUrls = [...style, ...character]
-    .map((r) => r.sourceUrl)
-    .filter((u): u is string => !!u);
+  // Channel thumbnails already have a public YouTube URL. Brand assets
+  // live on the user's disk, so they get one made for them — without
+  // this they were silently dropped and the covers came back showing the
+  // reference channels' persona instead of the character the owner
+  // uploaded, which is exactly what a client reported.
+  const refUrls: string[] = [];
+  for (const ref of [...style, ...character]) {
+    if (ref.sourceUrl) {
+      refUrls.push(ref.sourceUrl);
+      continue;
+    }
+    refUrls.push(await uploadToKie(ref, opts.apiKey));
+  }
 
   const createRes = await fetch(`${KIE_BASE}/createTask`, {
     method: "POST",

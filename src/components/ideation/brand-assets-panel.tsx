@@ -141,11 +141,10 @@ export function BrandAssetsPanel({
                 Your brand assets are NOT being sent with the image model you
                 have selected.
               </strong>{" "}
-              kie.ai only accepts reference images by public link — your
-              channel&apos;s own thumbnails have YouTube links, but a file you
-              upload here does not, so it is left out and the covers are built
-              from the channel references alone. To use them, switch the image
-              model in Settings to a Gemini or an OpenAI one.
+              This model generates from the written prompt alone and takes no
+              reference images at all — not your character, and not your
+              channel&apos;s thumbnails either. Pick a model whose note says it
+              takes reference images, in Settings.
             </span>
           </div>
         )}

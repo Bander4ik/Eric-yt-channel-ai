@@ -119,8 +119,19 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
   // kie.ai resells other people's models behind one key, which is why
   // it is the cheapest way in and also the most constrained: it takes
   // reference images as URLs only. Our own and competitor thumbnails are
-  // public YouTube URLs so those work, but locally uploaded brand assets
-  // cannot be sent — hence maxCharacterRefs: 0 on every model here.
+  // public YouTube URLs so those work.
+  //
+  // A locally uploaded brand asset has no URL, and for a while that meant
+  // maxCharacterRefs: 0 here and a client wondering why his character
+  // never appeared. kie has its own file upload API, so we make a URL:
+  // the asset goes to kie's temp storage under the user's own key
+  // (see uploadToKie in image-provider.ts) and comes back as a link like
+  // any other reference. Nothing is shared any wider than it already was
+  // — the same file was always going to kie a moment later as generation
+  // input; it just arrives one step earlier now.
+  //
+  // Still 0 on the text-to-image endpoints below: they accept no
+  // reference images at all, so there is nowhere to put a character.
   //
   // The models split into two kinds. The image-to-image endpoints accept
   // reference URLs (each under its own field name — see
@@ -162,7 +173,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "Nano Banana Pro (Gemini 3 Pro Image)",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price for this model, so no cost is recorded — check your kie dashboard.",
     },
     {
@@ -170,7 +181,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "Nano Banana 2 (Gemini 3.1 Flash Image)",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
     },
     {
@@ -178,7 +189,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "Nano Banana 2 Lite",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
     },
     {
@@ -198,7 +209,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "Seedream 5 Pro",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
     },
     {
@@ -214,7 +225,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "Seedream 5 Lite",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
     },
     {
@@ -238,7 +249,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "FLUX 2 Pro",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
     },
     {
@@ -254,7 +265,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "FLUX 2 Flex",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
     },
     {
@@ -270,7 +281,7 @@ export const IMAGE_MODELS: Record<ImageProviderChoice, ImageModelOption[]> = {
       label: "GPT Image 2",
       estimateCents: null,
       maxStyleRefs: 3,
-      maxCharacterRefs: 0,
+      maxCharacterRefs: 2,
       note: "Takes reference images. kie bills in credits and publishes no per-image price, so no cost is recorded — check your kie dashboard.",
     },
     {
