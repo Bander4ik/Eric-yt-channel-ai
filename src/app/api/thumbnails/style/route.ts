@@ -153,20 +153,33 @@ function publicWinner(w: {
 }
 
 export async function POST(req: Request) {
-  const channelId = resolveChannelId(req);
+  // The window is an explicit body field so a fresh click always says
+  // what it means, rather than silently trusting whatever was last
+  // saved. Sending it also persists it as the channel's new preference.
+  let body: { windowMonths?: number | null; channelId?: unknown } = {};
+  try {
+    body = (await req.json()) as {
+      windowMonths?: number | null;
+      channelId?: unknown;
+    };
+  } catch {
+    body = {};
+  }
+
+  // The channel comes from the body FIRST. The Thumbnails tab posts the
+  // channel the user is looking at, which is not necessarily the active
+  // one; reading only the query string meant the button analysed the
+  // ACTIVE channel and saved the profile under its id instead — silently,
+  // with a success message. On a multi-channel account every channel got
+  // the active one's profile. Found and fixed first in the sibling
+  // Thumbnail-Radar fork; this is the same fix.
+  const bodyChannelId =
+    typeof body.channelId === "string" && body.channelId ? body.channelId : null;
+  const channelId = bodyChannelId ?? resolveChannelId(req);
   if (!channelId) {
     return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
   }
 
-  // The window is an explicit body field so a fresh click always says
-  // what it means, rather than silently trusting whatever was last
-  // saved. Sending it also persists it as the channel's new preference.
-  let body: { windowMonths?: number | null } = {};
-  try {
-    body = (await req.json()) as { windowMonths?: number | null };
-  } catch {
-    body = {};
-  }
   if (Object.prototype.hasOwnProperty.call(body, "windowMonths")) {
     setThumbnailStyleWindowMonths(channelId, body.windowMonths ?? null);
   }
