@@ -659,7 +659,10 @@ export type GenerationPlan = {
 const PROMPT_INSTRUCTIONS = `You write prompts for an image generation model that will produce a YouTube thumbnail BACKGROUND, plus the short headline that will be composited on top of it afterwards.
 
 Critical constraints:
-- The image model must DERIVE the visual grammar from the reference images it is given. It must NOT reproduce any single reference's subject, layout or specific scene. Say this explicitly in the prompt.
+- The reference images fall into two kinds and they are NOT to be treated the same way. Say both of these explicitly in the prompt whenever brand assets are present.
+  - CHANNEL references (this channel's own and its competitors' thumbnails): DERIVE the visual grammar from them — composition, palette, mood, treatment. Do NOT reproduce any one of them: not its subject, not its layout, not its specific scene.
+  - BRAND references (a character, mascot, logo or frame the owner uploaded): the opposite. REPRODUCE the supplied brand character as the same individual — same face, hair, clothing and proportions — and the supplied logo or frame as the same graphic. It may be re-posed, re-lit and placed anywhere the composition needs, but it must be recognisably the same one, not a person "in that style".
+  - Where the two disagree, the brand reference wins on WHO or WHAT is depicted, and the channel references win on HOW it is depicted.
 - The image must contain NO TEXT, NO LETTERING, NO WATERMARKS and no logos. The headline is added later by a separate renderer. State this in the prompt.
 - Leave the headline zone visually calm — no busy detail there — so overlaid text stays readable.
 - Write the headline candidates in the channel's own language, shown by the sample titles you are given. The subject matter is irrelevant to this: a video about Norway on an English channel still gets an English headline. Never translate the channel's language into another one.
@@ -711,9 +714,16 @@ export async function buildGenerationPlan(input: {
     };
   }
 
+  // Only ever announced when the assets will actually be sent to the image
+  // model. Telling the prompt writer that a character exists when the
+  // selected provider silently drops it produces a prompt that instructs
+  // the model to reproduce a picture it was never given — which reads as
+  // the model ignoring the character, and cost a client a run to discover.
   const brandLine = input.brandAssetDescriptions.length
-    ? `The channel supplies these recurring brand assets as reference images: ${input.brandAssetDescriptions.join("; ")}. Keep them recognisable.`
-    : "The channel supplies no brand assets.";
+    ? `The channel owner supplies these BRAND references, and they are attached to the image request: ${input.brandAssetDescriptions.join(
+        "; "
+      )}. These are not style examples — they are the actual character/graphic that must appear. Instruct the image model, in the prompt, to reproduce the supplied brand character as the same individual (same face, hair, clothing, proportions) rather than inventing someone who merely fits the channel's style. Everything else about the image still follows the channel style profile.`
+    : "The channel supplies no brand assets, so every subject is derived from the style profile alone.";
 
   const textLine = input.modelRendersText
     ? `IMPORTANT OVERRIDE: this channel's language cannot be rendered by our text compositor, so the image model MUST draw the headline itself, spelled exactly as given. Include the exact headline text in the prompt, in quotes, and describe its treatment (${input.profile.textTreatment.uppercase ? "uppercase" : "sentence case"}, heavy weight, high contrast).`

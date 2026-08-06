@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Trash2, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Loader2, Trash2, Upload } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { findModelOption, isImageProviderChoice } from "@/lib/image-provider-types";
 
 /**
  * Per-channel brand assets.
@@ -40,7 +41,20 @@ function fileUrl(rel: string): string {
   return `/api/thumbnails/file/${rel.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-export function BrandAssetsPanel({ channelId }: { channelId: string | null }) {
+export function BrandAssetsPanel({
+  channelId,
+  provider,
+}: {
+  channelId: string | null;
+  /**
+   * The image model that would actually be used. Needed because not every
+   * one of them can receive an uploaded file — kie.ai takes reference
+   * images by public URL only, so a locally uploaded character has nowhere
+   * to go and is dropped. This panel promises the opposite in its own
+   * subtitle, so it is the right place to take the promise back.
+   */
+  provider?: { provider: string; model: string | null } | null;
+}) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [kind, setKind] = useState<string>("character");
   const [busy, setBusy] = useState(false);
@@ -96,6 +110,15 @@ export function BrandAssetsPanel({ channelId }: { channelId: string | null }) {
 
   const accept = kind === "font" ? ".ttf,.otf" : ".png,.jpg,.jpeg,.webp";
 
+  // A font is never sent to the image model — it is used by our own
+  // compositor — so only picture assets are affected by the model's limit.
+  const pictureAssets = assets.filter((a) => a.kind !== "font");
+  const dropped = useMemo(() => {
+    if (!pictureAssets.length || !provider) return false;
+    if (!isImageProviderChoice(provider.provider)) return false;
+    return findModelOption(provider.provider, provider.model).maxCharacterRefs === 0;
+  }, [pictureAssets.length, provider]);
+
   return (
     <Card>
       <CardContent className="space-y-3 py-4">
@@ -109,6 +132,23 @@ export function BrandAssetsPanel({ channelId }: { channelId: string | null }) {
         </div>
 
         {error && <div className="text-xs text-destructive">{error}</div>}
+
+        {dropped && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong className="font-medium">
+                Your brand assets are NOT being sent with the image model you
+                have selected.
+              </strong>{" "}
+              kie.ai only accepts reference images by public link — your
+              channel&apos;s own thumbnails have YouTube links, but a file you
+              upload here does not, so it is left out and the covers are built
+              from the channel references alone. To use them, switch the image
+              model in Settings to a Gemini or an OpenAI one.
+            </span>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <select

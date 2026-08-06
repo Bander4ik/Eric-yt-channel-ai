@@ -187,9 +187,15 @@ export async function runGeneration(
         aspect,
         channelTitles: listRecentChannelTitles(channelId),
         userNote: input.userNote ?? null,
-        brandAssetDescriptions: assets.map(
-          (a) => `${a.kind}${a.label ? ` (${a.label})` : ""}`
-        ),
+        // Announced to the prompt writer only when this model can actually
+        // receive them. kie.ai takes reference images by public URL only,
+        // so an uploaded character has nowhere to go and its
+        // maxCharacterRefs is 0 — promising the prompt a character that
+        // never gets attached is worse than not mentioning it.
+        brandAssetDescriptions:
+          modelOption.maxCharacterRefs > 0
+            ? assets.map((a) => `${a.kind}${a.label ? ` (${a.label})` : ""}`)
+            : [],
         headlineZone: input.zone ?? undefined,
         modelRendersText,
       });

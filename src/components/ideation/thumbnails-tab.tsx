@@ -576,7 +576,7 @@ export function ThumbnailsTab() {
         onWindowChange={previewWindow}
       />
 
-      <BrandAssetsPanel channelId={channelId} />
+      <BrandAssetsPanel channelId={channelId} provider={provider} />
 
       {style?.profile && (
         <Card>
