@@ -71,12 +71,21 @@ type LengthBucket = {
   avgViews: number;
 };
 
+/** Same shape as LengthBucket but for TITLE words, and db.ts names the
+ *  video count `videos` there rather than `count`. */
+type TitleLengthBucket = {
+  bucket: string;
+  videos: number;
+  avgViews: number;
+};
+
 type PackagingResponse = {
   stats: Stats;
   topPackages: TopPackages;
   featureImpact: FeatureImpactRow[];
   thumbWords: ThumbWordStat[];
   thumbLengthBuckets: LengthBucket[];
+  titleLengths: TitleLengthBucket[];
   formula: string | null;
 };
 
@@ -163,6 +172,16 @@ export function PackagingTab() {
     [data]
   );
 
+  // The single best title-length bucket, plus whether it rests on enough
+  // videos to be stated as a fact. Five is the same floor the winning
+  // formula uses; below it the line says "worth testing" instead.
+  const bestTitleLength = useMemo(() => {
+    const rows = (data?.titleLengths ?? []).filter((b) => b.videos > 0);
+    if (rows.length === 0) return null;
+    const best = rows.reduce((a, b) => (b.avgViews > a.avgViews ? b : a));
+    return { ...best, thin: best.videos < 5, others: rows.filter((r) => r !== best) };
+  }, [data]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-2 py-20 text-muted-foreground">
@@ -232,6 +251,43 @@ export function PackagingTab() {
             Packaging stats below only cover OCR&rsquo;d videos.
           </span>
         </div>
+      )}
+
+      {/* ---- Best title length ----
+          One line, no chart: the only finding that used to live on the
+          Formula Analyzer page and had no second home. Needs no OCR, so
+          it sits above everything that does. */}
+      {bestTitleLength && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <Ruler className="h-3.5 w-3.5 shrink-0 self-center" />
+              <span className="text-sm font-semibold">Best title length</span>
+              {/* The bucket label already reads "13–16 words" — don't
+                  append a second "words" to it. */}
+              <span className="text-sm">{bestTitleLength.bucket}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {fmtCompact(bestTitleLength.avgViews)} avg views ·{" "}
+                {bestTitleLength.videos} video
+                {bestTitleLength.videos === 1 ? "" : "s"}
+                {bestTitleLength.thin
+                  ? " · thin sample, treat as worth testing"
+                  : ""}
+              </span>
+            </div>
+            {bestTitleLength.others.length > 0 && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Others:{" "}
+                {bestTitleLength.others
+                  .map(
+                    (b) =>
+                      `${b.bucket} — ${fmtCompact(b.avgViews)} (${b.videos})`
+                  )
+                  .join(" · ")}
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* ---- Winning formula ----

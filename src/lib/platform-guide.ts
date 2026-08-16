@@ -68,10 +68,17 @@ Competitors, and the AI chat's local tools) shows data for the ACTIVE
 channel only.
 
 ## The sidebar (left navigation), grouped
-- **(top)** Dashboard, Videos, AI Chat
-- **Title insights**: Hook Lab, Formula Analyzer, Hooks Library
+- **(top)** Dashboard, Videos, AI Chat, Ideation, Hook Lab
 - **Research**: Competitors, Alerts
-- **Config**: Settings (API keys, channel binding, usage, appearance — one page), Logs (hidden unless enabled)`,
+- **Config**: Settings (API keys, channel binding, usage, appearance — one page), Logs (hidden unless enabled)
+
+Two pages are NOT in the menu any more: Formula Analyzer
+(\`/formula-analyzer\`) and Hooks Library (\`/hooks-library\`). They still
+answer by direct URL, but never tell a user to "open Formula Analyzer"
+or "go to Hooks Library" — they will not find them. Answer the question
+with the data instead: you have \`get_formula_breakdown\` and
+\`list_saved_hooks\` for exactly that. The one finding unique to Formula
+Analyzer, the best title length, now shows in Ideation → Packaging.`,
 
   dashboard: `# Dashboard (/)
 
@@ -142,15 +149,19 @@ video that has a transcript.
 ## How to use it
 - **"Analyze N pending" button** — runs the AI analyser over every
   video that has a transcript but no hook scores yet. Runs as a
-  background job with a progress banner; can be cancelled.
-- **Model picker** (next to the button) — choose Claude or a Gemini
-  variant for the analysis. "Auto" uses Claude if its key is set,
+  background job with a progress banner; can be cancelled. There is no
+  model picker any more: the analysis uses Claude when its key is set,
   otherwise Gemini.
-- **Tabs** — Dashboard (winning formula, averages), Rankings (every
-  video scored), Video Cards (detailed per-video breakdowns), Playbook
-  (all the feedback consolidated into one set of rules).
 
-## Playbook tab
+The page itself is ONE screen — the playbook below, nothing else. It
+used to have four tabs (Dashboard, Rankings, Video Cards, Playbook)
+full of per-video scores and charts; those were removed because they
+ended in no decision. The per-video scores are all still computed and
+stored, and you can still read them with \`get_hook_stats\` and
+\`list_hook_breakdowns\` — but do NOT tell the user to open a tab to see
+them, because there is no such tab. Answer with the numbers directly.
+
+## The playbook
 Consolidates every per-video hook analysis on the channel into ONE
 picture, so the user doesn't have to read a few hundred separate
 suggestions. Generated on demand with one AI call ("Generate" /
@@ -166,7 +177,8 @@ It shows:
   channel's hooks.
 - **Diagnosis strip** — weakest and strongest of the 7 score
   dimensions, plus the winning formula and how many times the channel
-  average views it pulls.
+  average views it pulls. This strip is the only place those numbers
+  appear on screen now.
 - **What keeps going wrong / what already works** — recurring themes
   clustered out of the per-video strengths and improvements, each with
   how many hooks it affects.
@@ -192,6 +204,14 @@ It shows:
 
   "formula-analyzer": `# Formula Analyzer (/formula-analyzer)
 
+NOT IN THE MENU. The page still answers at \`/formula-analyzer\` if
+someone types the URL, but it was taken out of the sidebar, so never
+send a user there. Its findings reach them in two other places already:
+best title length shows in Ideation → Packaging, and the word stats
+come back as plain advice in Packaging's "winning formula" and as ready
+title suggestions in Ideation → Signals. If they ask about title words
+or length, call \`get_formula_breakdown\` and answer with the numbers.
+
 A pure-statistics view of the channel's title catalogue. No AI — just
 SQL aggregation over the user's own videos.
 
@@ -213,6 +233,11 @@ SQL aggregation over the user's own videos.
   ≥1.5× the channel's median views.`,
 
   "hooks-library": `# Hooks Library (/hooks-library)
+
+NOT IN THE MENU. The page still answers at \`/hooks-library\` by direct
+URL, but it left the sidebar, so don't tell anyone to open it. Saving
+still works where saving actually happens — the comment views — and you
+can read everything saved with \`list_saved_hooks\`.
 
 A manual bookmark list. NOT AI-generated — it's where the creator
 saves comment quotes or hook phrases they want to reuse as opening

@@ -1,4 +1,4 @@
-import { getActiveChannelId } from "@/lib/db";
+import { getActiveChannelId, titleLengthBuckets } from "@/lib/db";
 import {
   channelViewStats,
   featureImpact,
@@ -44,6 +44,12 @@ export async function GET(req: Request) {
     featureImpact: featureImpact(),
     thumbWords: thumbnailWordStats(),
     thumbLengthBuckets: thumbnailLengthBuckets(),
+    // Title length came over from the Formula Analyzer page when that
+    // page left the sidebar. It is the one thing there that had no home
+    // anywhere else, and unlike everything around it here it needs no
+    // OCR — so it renders even on a channel whose thumbnails were never
+    // read.
+    titleLengths: titleLengthBuckets(),
     formula: await packagingFormulaSummary({ refresh }),
   });
 }

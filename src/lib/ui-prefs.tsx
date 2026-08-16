@@ -24,15 +24,14 @@ const PREFIX = "yt-channel-ai.ui.";
 export const UI_PREF_DEFAULTS = {
   showEditorBilling: false,
   showLogs: false,
-  // Defaults ON, unlike the two above. The Ideas board is an existing tab
-  // that may already hold someone's cards, and a card that vanishes reads
-  // as data loss rather than a tidier UI. A client who runs the channel
-  // alone told us the board earns nothing for him — he already plans in
-  // Trello and has no assistants inside the app to move cards — while
-  // another asked for exactly the team workflow it supports. So it stays
-  // for everyone and gets a switch, rather than being right for one of
-  // them and wrong for the other.
-  showIdeasBoard: true,
+  // Off by default since 2026-08-16. The board is a team surface: it
+  // pays off only when someone other than the owner moves the cards, and
+  // every client we have runs their channels alone. Leaving it on cost
+  // them a tab to read and decide about on a screen that is already too
+  // busy. Nothing is deleted — the `ideas` table and every card in it
+  // stay, and the client who asked for the team workflow turns this back
+  // on in Settings and finds his cards where he left them.
+  showIdeasBoard: false,
 } as const satisfies Record<string, boolean>;
 
 export type UiPrefKey = keyof typeof UI_PREF_DEFAULTS;

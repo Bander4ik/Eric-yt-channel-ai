@@ -13,8 +13,6 @@ import {
   Bell,
   Search,
   Sparkles,
-  BarChart3,
-  BookmarkPlus,
   Lightbulb,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -81,10 +79,18 @@ export function Sidebar() {
   }, []);
 
   // Grouped nav.
-  //   Main         — the everyday entry points (Dashboard, Videos, Chat).
-  //   Title Insights — anything that pokes at your titles/hooks: AI Hook
-  //                  Lab scoring + statistical word/length analyzer +
-  //                  manual library of saved hook quotes.
+  //   Main         — the everyday entry points (Dashboard, Videos, Chat,
+  //                  Ideation, Hook Lab).
+  //
+  // "Title insights" used to be a section of three: Hook Lab, Formula
+  // Analyzer and Hooks Library. A client who ships videos alone said the
+  // product had "too much stuff, I don't know how to use it", and three
+  // menu entries into the same subject were part of that. Hook Lab now
+  // carries the one output anybody used — the paste-ready hook rules —
+  // so it joins the main list, and the other two leave the menu. Their
+  // routes still answer by direct URL (same treatment /logs gets); the
+  // one finding unique to Formula Analyzer, best title length, moved
+  // into Ideation → Packaging so nothing is lost by not going there.
   //   Research     — looking outside your own channel (competitors and
   //                  their viral-alert feed; the per-channel /alerts page
   //                  is kept as a power-user surface).
@@ -97,24 +103,7 @@ export function Sidebar() {
         { href: "/videos", label: t.nav.videos, icon: Video, badge: 0 },
         { href: "/chat", label: t.nav.chat, icon: MessageSquare, badge: 0 },
         { href: "/ideation", label: "Ideation", icon: Lightbulb, badge: 0 },
-      ],
-    },
-    {
-      label: "Title insights",
-      items: [
         { href: "/hooks", label: "Hook Lab", icon: Sparkles, badge: 0 },
-        {
-          href: "/formula-analyzer",
-          label: "Formula Analyzer",
-          icon: BarChart3,
-          badge: 0,
-        },
-        {
-          href: "/hooks-library",
-          label: "Hooks Library",
-          icon: BookmarkPlus,
-          badge: 0,
-        },
       ],
     },
     {
