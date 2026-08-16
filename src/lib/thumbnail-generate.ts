@@ -69,6 +69,11 @@ export type RunGenerationInput = {
   variants: number;
   /** 16:9 long-form cover (default) or 9:16 for Shorts. */
   aspect?: AspectChoice;
+  /**
+   * Which of the channel's winning looks to build for. Omitted means the
+   * strongest one, which is also the only one an older profile has.
+   */
+  formatIndex?: number | null;
   /** Supplied when re-running an edited prompt — skips the planning call. */
   reusePrompt?: string | null;
   overlayText?: string | null;
@@ -185,6 +190,7 @@ export async function runGeneration(
         profile,
         title,
         aspect,
+        formatIndex: input.formatIndex ?? null,
         channelTitles: listRecentChannelTitles(channelId),
         userNote: input.userNote ?? null,
         // Announced to the prompt writer only when this model can actually

@@ -6104,6 +6104,43 @@ db.exec(`
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
 
+  -- Thumbnail click-through rate, one row per video per DAY, as
+  -- delivered by the YouTube Reporting API's reach report. Stored daily
+  -- rather than pre-aggregated because every consumer wants a different
+  -- window (the style analysis uses the channel's chosen months) and
+  -- because Google re-delivers corrected days as backfill -- INSERT OR
+  -- REPLACE on (video_id, date) applies a correction with no extra work.
+  --
+  -- ctr is a PERCENTAGE 0..100, exactly as YouTube sends it. Do not
+  -- "normalise" it to a fraction on the way in: the number the owner
+  -- sees in YouTube Studio is the percentage, and matching it is what
+  -- makes the figure trustworthy to them.
+  CREATE TABLE IF NOT EXISTS video_ctr_daily (
+    video_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    channel_id TEXT,
+    impressions INTEGER NOT NULL DEFAULT 0,
+    ctr REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (video_id, date)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_video_ctr_daily_channel
+    ON video_ctr_daily (channel_id, date);
+
+  -- Which reach reports we have already pulled in. Keyed by the report
+  -- id so a re-listed report is skipped without re-downloading it; the
+  -- row count is kept only so the Logs page can show that a day with no
+  -- data was genuinely empty rather than silently skipped.
+  CREATE TABLE IF NOT EXISTS reach_reports_ingested (
+    report_id TEXT PRIMARY KEY,
+    channel_id TEXT,
+    job_id TEXT,
+    start_time TEXT,
+    end_time TEXT,
+    rows_ingested INTEGER NOT NULL DEFAULT 0,
+    ingested_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+
   -- One cached style profile per channel. profile_json is the
   -- structured output of the Claude vision pass; the sample sizes and
   -- the source video ids live in their own columns so the transparency
@@ -6446,6 +6483,159 @@ export function deleteImageProvider(id: number): boolean {
 const THUMB_MIN_AGE_DAYS = 14;
 const THUMB_SHORT_MAX_SECONDS = 60;
 
+/**
+ * Floor under a video's impressions before its CTR is allowed to vote.
+ * A cover shown 30 times can post a 33% rate off ten clicks; treating
+ * that as evidence would put the channel's quietest videos at the top of
+ * its "what works" list.
+ */
+const MIN_CTR_IMPRESSIONS = 100;
+
+/**
+ * How many videos must clear that floor before we rank on CTR at all.
+ * Below this there is no median worth taking, so views stay in charge.
+ * Matches the MIN_WINNERS bar the style analysis uses for the same
+ * reason -- a handful of images is not a pattern.
+ */
+const MIN_CTR_VIDEOS = 5;
+
+/* ---------------- Thumbnail click-through rate (reach reports) --------
+ * Views measure the topic; CTR measures the picture. These helpers hold
+ * the CTR side so the winner selection above can rank on the metric that
+ * is actually about the thumbnail, whenever the channel has it.
+ * ------------------------------------------------------------------- */
+
+/** Bulk upsert of daily reach rows. Re-delivered days overwrite. */
+export function saveReachRows(
+  rows: Array<{ videoId: string; date: string; impressions: number; ctr: number }>,
+  channelId: string | null
+): number {
+  if (rows.length === 0) return 0;
+  const stmt = db.prepare(
+    `INSERT INTO video_ctr_daily (video_id, date, channel_id, impressions, ctr)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(video_id, date) DO UPDATE SET
+       channel_id = excluded.channel_id,
+       impressions = excluded.impressions,
+       ctr = excluded.ctr`
+  );
+  const run = db.transaction(
+    (batch: Array<{ videoId: string; date: string; impressions: number; ctr: number }>) => {
+      for (const r of batch) {
+        stmt.run(r.videoId, r.date, channelId, r.impressions, r.ctr);
+      }
+    }
+  );
+  run(rows);
+  return rows.length;
+}
+
+export function isReachReportIngested(reportId: string): boolean {
+  const row = db
+    .prepare(`SELECT 1 FROM reach_reports_ingested WHERE report_id = ?`)
+    .get(reportId);
+  return !!row;
+}
+
+export function markReachReportIngested(meta: {
+  reportId: string;
+  channelId: string | null;
+  jobId: string;
+  startTime: string;
+  endTime: string;
+  rowsIngested: number;
+}): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO reach_reports_ingested
+       (report_id, channel_id, job_id, start_time, end_time, rows_ingested)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    meta.reportId,
+    meta.channelId,
+    meta.jobId,
+    meta.startTime,
+    meta.endTime,
+    meta.rowsIngested
+  );
+}
+
+export type VideoCtr = { impressions: number; ctr: number };
+
+/**
+ * Per-video CTR for a channel, aggregated over the days we hold.
+ *
+ * The CTR is impression-WEIGHTED, not a plain average of daily rates: a
+ * day that served 40 impressions must not count as much as a day that
+ * served 40,000, and averaging the percentages would let a quiet day
+ * with a freak 30% rate outrank a video that actually performs.
+ *
+ * `sinceEpochSec` bounds the window so the caller can ask the same
+ * question the style analysis asks ("the last N months").
+ */
+export function getVideoCtrMap(
+  channelId: string,
+  sinceEpochSec: number | null = null
+): Map<string, VideoCtr> {
+  // Dates arrive as YYYYMMDD strings; compare in that same shape rather
+  // than converting every row.
+  const sinceYmd =
+    sinceEpochSec === null
+      ? null
+      : new Date(sinceEpochSec * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+
+  const rows = db
+    .prepare(
+      `SELECT video_id,
+              SUM(impressions) AS impressions,
+              SUM(impressions * ctr) AS weighted
+       FROM video_ctr_daily
+       WHERE channel_id = ?
+         ${sinceYmd !== null ? "AND date >= ?" : ""}
+       GROUP BY video_id`
+    )
+    .all(
+      ...(sinceYmd !== null ? [channelId, sinceYmd] : [channelId])
+    ) as Array<{ video_id: string; impressions: number | null; weighted: number | null }>;
+
+  const map = new Map<string, VideoCtr>();
+  for (const r of rows) {
+    const impressions = r.impressions ?? 0;
+    if (impressions <= 0) continue;
+    map.set(r.video_id, {
+      impressions,
+      ctr: (r.weighted ?? 0) / impressions,
+    });
+  }
+  return map;
+}
+
+/** How many days of reach data we hold for a channel, for the UI. */
+export function getReachCoverage(
+  channelId: string
+): { days: number; videos: number; firstDate: string | null; lastDate: string | null } {
+  const row = db
+    .prepare(
+      `SELECT COUNT(DISTINCT date) AS days,
+              COUNT(DISTINCT video_id) AS videos,
+              MIN(date) AS first_date,
+              MAX(date) AS last_date
+       FROM video_ctr_daily
+       WHERE channel_id = ?`
+    )
+    .get(channelId) as {
+    days: number | null;
+    videos: number | null;
+    first_date: string | null;
+    last_date: string | null;
+  };
+  return {
+    days: row?.days ?? 0,
+    videos: row?.videos ?? 0,
+    firstDate: row?.first_date ?? null,
+    lastDate: row?.last_date ?? null,
+  };
+}
+
 export type ThumbnailWinner = {
   videoId: string;
   title: string;
@@ -6455,6 +6645,10 @@ export type ThumbnailWinner = {
   multiplier: number;
   publishedAt: number | null;
   sourceLabel: string;
+  /** Impression-weighted CTR % when the channel has reach data. */
+  ctr?: number | null;
+  /** Impressions behind that CTR — the weight of the evidence. */
+  impressions?: number | null;
 };
 
 function medianOf(values: number[]): number {
@@ -6577,23 +6771,81 @@ export function listOwnThumbnailWinners(
     published_at: number | null;
   }>;
 
-  const median = medianOf(rows.map((r) => r.views ?? 0).filter((v) => v > 0));
-  if (median <= 0) return [];
+  // CTR first when we have enough of it. Views tell you the topic
+  // worked and the algorithm distributed it; CTR tells you the PICTURE
+  // worked, which is the only question a thumbnail style analysis is
+  // actually asking. Falling back is normal, not a failure: CTR needs a
+  // connected Google account and a reach report that has had time to
+  // accumulate, and most installs will have neither on day one.
+  const ctrMap = getVideoCtrMap(channelId, windowFloor);
+  const withCtr = rows.filter((r) => {
+    const c = ctrMap.get(r.id);
+    return c !== undefined && c.impressions >= MIN_CTR_IMPRESSIONS;
+  });
+  const useCtr = withCtr.length >= MIN_CTR_VIDEOS;
 
-  return rows
-    .map((r) => ({
+  const scored = rows.map((r) => {
+    const c = ctrMap.get(r.id) ?? null;
+    return {
       videoId: r.id,
       title: r.title,
       thumbnailUrl: r.thumbnail_url,
       thumbnailText: r.thumbnail_text,
       views: r.views ?? 0,
-      multiplier: (r.views ?? 0) / median,
       publishedAt: r.published_at,
       sourceLabel: "own",
-    }))
+      ctr: c ? c.ctr : null,
+      impressions: c ? c.impressions : null,
+    };
+  });
+
+  if (useCtr) {
+    // Rank inside the CTR-bearing set only. A video with no CTR row is
+    // not "bad" -- it is unmeasured, and scoring it as zero would push
+    // every recently published video out of the winners for no reason.
+    const measured = scored.filter(
+      (s) => s.impressions !== null && s.impressions >= MIN_CTR_IMPRESSIONS
+    );
+    const medianCtr = medianOf(measured.map((s) => s.ctr ?? 0).filter((v) => v > 0));
+    if (medianCtr > 0) {
+      return measured
+        .map((s) => ({ ...s, multiplier: (s.ctr ?? 0) / medianCtr }))
+        .filter((w) => w.multiplier > 1)
+        .sort((a, b) => b.multiplier - a.multiplier)
+        .slice(0, limit);
+    }
+    // Median of zero means every measured video has 0% CTR, which is not
+    // a real state -- fall through to views rather than return nothing.
+  }
+
+  const median = medianOf(rows.map((r) => r.views ?? 0).filter((v) => v > 0));
+  if (median <= 0) return [];
+
+  return scored
+    .map((s) => ({ ...s, multiplier: s.views / median }))
     .filter((w) => w.multiplier > 1)
     .sort((a, b) => b.multiplier - a.multiplier)
     .slice(0, limit);
+}
+
+/**
+ * Which metric `listOwnThumbnailWinners` would rank on right now.
+ *
+ * Kept as its own function because the answer has to be shown to the
+ * user and put into the model's instructions -- "these beat their
+ * channel's median CTR" and "these beat its median views" are different
+ * claims, and printing the wrong one would be a lie about the evidence.
+ */
+export function ownWinnerBasis(
+  channelId: string,
+  windowMonths: number | null = null
+): "ctr" | "views" {
+  const ctrMap = getVideoCtrMap(channelId, thumbWindowFloor(windowMonths));
+  let n = 0;
+  for (const v of ctrMap.values()) {
+    if (v.impressions >= MIN_CTR_IMPRESSIONS) n++;
+  }
+  return n >= MIN_CTR_VIDEOS ? "ctr" : "views";
 }
 
 /**

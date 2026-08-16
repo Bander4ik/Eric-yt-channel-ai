@@ -92,6 +92,28 @@ export function resolveAnalysisProvider(): AnalysisProvider | null {
 /** Matches FORMULA_MIN_USES in packaging.ts — one bar across the app. */
 export const MIN_WINNERS = 5;
 
+/**
+ * How many distinct looks we let the analysis find.
+ *
+ * The floor is 1 on purpose: some channels really do run one cover
+ * format, and inventing a second one to fill a quota is the same failure
+ * as flattening two real ones into an average — just in the other
+ * direction. The ceiling is 3 because past that the "formats" stop being
+ * formats and become a list of individual thumbnails.
+ */
+const MIN_FORMATS = 1;
+const MAX_FORMATS = 3;
+
+/**
+ * Images needed before a group counts as a format at all.
+ *
+ * Deliberately lower than MIN_WINNERS: that bar is for a channel-wide
+ * claim ("this channel always does X"), while a format is a claim about
+ * a subset. Two images are a coincidence; three are a pattern worth
+ * showing, flagged as thin.
+ */
+const MIN_FORMAT_EVIDENCE = 3;
+
 export const MAX_OWN_REFS = 12;
 export const MAX_COMPETITOR_REFS = 12;
 
@@ -214,7 +236,8 @@ export type StyleTrait = {
   evidence: string[];
 };
 
-export type ThumbnailStyleProfile = {
+/** The visual traits of ONE look. Also the shape of the legacy profile. */
+export type StyleTraits = {
   composition: StyleTrait & { textZone: TextZone };
   palette: StyleTrait & { dominant: string[] };
   subject: StyleTrait & { facePresent: boolean; recurringElement: string | null };
@@ -229,6 +252,37 @@ export type ThumbnailStyleProfile = {
     textColor: string | null;
   };
   mood: StyleTrait;
+};
+
+/**
+ * One distinct look that works on this channel.
+ *
+ * Channels rarely have exactly one. A channel that wins with BOTH a
+ * face-and-reaction cover AND a clean landscape-with-big-text cover has
+ * two working formats, and the old single-profile shape forced the model
+ * to describe what those two "share" — which is either nothing or the
+ * bland average of both. That average is what people meant when they
+ * said the generated covers came out generic.
+ */
+export type StyleFormat = StyleTraits & {
+  /** Short human name, e.g. "Face + shock reaction". */
+  label: string;
+  /** Video ids this look was read from. */
+  evidence: string[];
+  /** Too few images to call it a rule — shown, but flagged. */
+  lowConfidence: boolean;
+};
+
+export type ThumbnailStyleProfile = StyleTraits & {
+  /**
+   * Every distinct look found, strongest first. Optional because
+   * profiles cached before this existed have only the flat fields; a
+   * missing array means "one look", which is what those profiles are.
+   *
+   * `formats[0]` is always mirrored into the flat fields above, so every
+   * existing reader keeps working without knowing formats exist.
+   */
+  formats?: StyleFormat[];
   avoid: string[];
   caveats: string[];
 };
@@ -435,25 +489,65 @@ export async function collectReferenceThumbnailsForWindow(
  * Vision analysis
  * ------------------------------------------------------------------ */
 
-const ANALYSIS_INSTRUCTIONS = `You are analysing YouTube thumbnails that are PROVEN to outperform their channel's median views. Your job is to describe the visual pattern they share — not to praise them, not to invent a brand strategy.
+/**
+ * What the channel's own winners were ranked on.
+ *
+ * This is not cosmetic. Views say the topic worked and the algorithm
+ * distributed it; click-through says the PICTURE worked. Telling the
+ * model "these beat their channel's median CTR" when they were actually
+ * picked by views would be a false claim about the evidence, and every
+ * trait it then reports would inherit that false claim.
+ *
+ * Competitors are always views-based — nobody can see another channel's
+ * click-through — so when the two sources differ the labels differ too,
+ * per image, rather than being flattened into one sentence.
+ */
+export type WinnerBasis = "ctr" | "views";
 
-Each image is labelled with its view multiplier against its own channel's median. Higher multiplier = stronger evidence.
+function analysisInstructions(ownBasis: WinnerBasis): string {
+  const ownClause =
+    ownBasis === "ctr"
+      ? `The OWN CHANNEL images are PROVEN to outperform their channel's median CLICK-THROUGH RATE — the share of people who clicked after being shown the cover. That is direct evidence about the image itself.
+The COMPETITOR images are ranked by views against their own channel's median, because click-through is private to a channel's owner. Treat a competitor trait as weaker evidence than the same trait on an own-channel image.`
+      : `These thumbnails are PROVEN to outperform their channel's median VIEWS. Views are an indirect signal for a cover: they also reflect the topic and how the algorithm distributed the video. Do not claim an image "gets clicks" — say it appears on videos that outperformed.`;
+
+  return `You are analysing YouTube thumbnails that outperformed their channel. Your job is to identify the distinct visual FORMATS at work — not to praise them, not to invent a brand strategy.
+
+${ownClause}
+
+Each image is labelled with its multiplier and with the metric that multiplier is measured in. Higher multiplier = stronger evidence.
+
+MOST IMPORTANT INSTRUCTION — read this twice:
+
+A channel usually has MORE THAN ONE cover that works. A face with a big reaction and a clean wide landscape with huge text can BOTH win on the same channel. They are two different formats, not one blurry average of the two.
+
+Do NOT flatten them together. Do NOT describe "what they share" if what they share is only generic (bold text, high contrast, a subject in frame) — that description is useless and produces bland covers.
+
+Instead: group these images into ${MIN_FORMATS}-${MAX_FORMATS} distinct formats, strongest first. Judge a format by how DIFFERENT it is from the others in composition, subject treatment and typography — not by topic. If every image genuinely is one look, return exactly one format and say so; forcing a second one would be just as wrong as flattening.
 
 Rules you must follow:
 - Describe only what you can SEE in these specific images.
-- A trait supported by fewer than ${MIN_WINNERS} images belongs in "caveats", not stated as a rule.
-- Every trait must list the video ids that support it in "evidence", and "n" must equal that list's length.
+- A format needs at least ${MIN_FORMAT_EVIDENCE} images. Images that fit no format go in "caveats", never into a format they don't belong to.
+- Every format lists the video ids it was read from in its own "evidence". Every trait also lists its supporting ids, and "n" must equal that list's length.
+- A trait supported by fewer than ${MIN_WINNERS} images across the whole set belongs in "caveats", not stated as a channel-wide rule.
 - Do not name any specific video's subject matter as a rule. You are extracting visual GRAMMAR (composition, colour, typography, subject scale, mood), not topics.
+- "label" is a short human name for the format, 2-5 words, describing the LOOK — e.g. "Face + shock reaction", "Wide landscape, huge text". Never a topic.
 - Write in plain English. This gets shown to the channel owner.
 
 Return ONLY a JSON object, no prose and no code fence, in exactly this shape:
 
 {
-  "composition": { "summary": string, "textZone": "top-left"|"top-center"|"top-right"|"left"|"center"|"right"|"bottom-left"|"bottom-center"|"bottom-right", "n": number, "evidence": string[] },
-  "palette": { "summary": string, "dominant": string[], "n": number, "evidence": string[] },
-  "subject": { "summary": string, "facePresent": boolean, "recurringElement": string|null, "n": number, "evidence": string[] },
-  "textTreatment": { "summary": string, "wordCountBand": string, "uppercase": boolean, "stroke": boolean, "shadow": boolean, "plate": boolean, "plateColor": string|null, "textColor": string|null, "n": number, "evidence": string[] },
-  "mood": { "summary": string, "n": number, "evidence": string[] },
+  "formats": [
+    {
+      "label": string,
+      "evidence": string[],
+      "composition": { "summary": string, "textZone": "top-left"|"top-center"|"top-right"|"left"|"center"|"right"|"bottom-left"|"bottom-center"|"bottom-right", "n": number, "evidence": string[] },
+      "palette": { "summary": string, "dominant": string[], "n": number, "evidence": string[] },
+      "subject": { "summary": string, "facePresent": boolean, "recurringElement": string|null, "n": number, "evidence": string[] },
+      "textTreatment": { "summary": string, "wordCountBand": string, "uppercase": boolean, "stroke": boolean, "shadow": boolean, "plate": boolean, "plateColor": string|null, "textColor": string|null, "n": number, "evidence": string[] },
+      "mood": { "summary": string, "n": number, "evidence": string[] }
+    }
+  ],
   "avoid": string[],
   "caveats": string[]
 }
@@ -461,11 +555,14 @@ Return ONLY a JSON object, no prose and no code fence, in exactly this shape:
 "dominant" is 2-4 hex colours. "textZone" is where the headline sits in most of them. "wordCountBand" is like "2-3" or "4-6". "avoid" is what these winners consistently do NOT do.
 
 "plate" is true when the headline sits on a solid colour block or banner rather than directly on the picture; "plateColor" is that block's hex colour and "textColor" the letters' hex colour. Both null when there is no plate. Look carefully: a banner behind the words is one of the strongest things a channel repeats, and getting it wrong makes every generated cover look like a different channel.`;
+}
 
 export async function analyseThumbnailStyle(input: {
   analyser: AnalysisProvider;
   own: ReferenceThumbnail[];
   competitor: ReferenceThumbnail[];
+  /** What the OWN winners were ranked on. Competitors are always views. */
+  ownBasis?: WinnerBasis;
 }): Promise<{ profile: ThumbnailStyleProfile; model: string }> {
   const all = [...input.own, ...input.competitor];
   if (all.length === 0) {
@@ -484,11 +581,18 @@ export async function analyseThumbnailStyle(input: {
     };
   }
 
+  const ownBasis: WinnerBasis = input.ownBasis ?? "views";
+
   const content: Anthropic.MessageParam["content"] = [];
   for (const ref of all) {
+    // The metric is stated per image, not once at the top: on a CTR run
+    // the own-channel images are click-through multiples while the
+    // competitor images are still view multiples, and a single blanket
+    // sentence would misdescribe half the evidence.
+    const metric = ref.source === "own" && ownBasis === "ctr" ? "median CTR" : "median views";
     content.push({
       type: "text",
-      text: `[${ref.videoId}] ${ref.source === "own" ? "OWN CHANNEL" : `COMPETITOR: ${ref.sourceLabel}`} — ${ref.multiplier.toFixed(1)}x its channel median — "${ref.title}"`,
+      text: `[${ref.videoId}] ${ref.source === "own" ? "OWN CHANNEL" : `COMPETITOR: ${ref.sourceLabel}`} — ${ref.multiplier.toFixed(1)}x its channel ${metric} — "${ref.title}"`,
     });
     content.push({
       type: "image",
@@ -499,7 +603,7 @@ export async function analyseThumbnailStyle(input: {
       },
     });
   }
-  content.push({ type: "text", text: ANALYSIS_INSTRUCTIONS });
+  content.push({ type: "text", text: analysisInstructions(ownBasis) });
 
   const raw = await runTurn({
     analyser: input.analyser,
@@ -591,7 +695,14 @@ function hexOrNull(v: unknown): string | null {
   return /^#[0-9a-fA-F]{6}$/.test(s) ? s : null;
 }
 
-function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
+/**
+ * Normalise one look's traits.
+ *
+ * Takes the same object shape whether it came from a format entry or
+ * from a pre-formats profile — which is what lets an old cached profile
+ * and a new multi-format one go through identical code.
+ */
+function normaliseTraits(raw: Record<string, unknown>): StyleTraits {
   const trait = (key: string): StyleTrait => {
     const t = (raw[key] ?? {}) as Record<string, unknown>;
     const evidence = Array.isArray(t.evidence)
@@ -639,11 +750,61 @@ function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
       textColor: hexOrNull(textTreatment?.textColor),
     },
     mood: trait("mood"),
-    avoid: Array.isArray(raw.avoid) ? (raw.avoid as unknown[]).map(String) : [],
-    caveats: Array.isArray(raw.caveats)
-      ? (raw.caveats as unknown[]).map(String)
-      : [],
   };
+}
+
+function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
+  const avoid = Array.isArray(raw.avoid) ? (raw.avoid as unknown[]).map(String) : [];
+  const caveats = Array.isArray(raw.caveats)
+    ? (raw.caveats as unknown[]).map(String)
+    : [];
+
+  const rawFormats = Array.isArray(raw.formats)
+    ? (raw.formats as unknown[]).filter(
+        (f): f is Record<string, unknown> => !!f && typeof f === "object"
+      )
+    : [];
+
+  // No formats key at all = a model that answered in the old shape, or an
+  // old cached profile being re-normalised. Treat the object itself as
+  // the single format rather than losing everything it did return.
+  if (rawFormats.length === 0) {
+    return { ...normaliseTraits(raw), avoid, caveats };
+  }
+
+  const formats: StyleFormat[] = rawFormats
+    .map((f, i) => {
+      const evidence = Array.isArray(f.evidence)
+        ? (f.evidence as unknown[]).map(String)
+        : [];
+      return {
+        ...normaliseTraits(f),
+        label:
+          typeof f.label === "string" && f.label.trim()
+            ? (f.label as string).trim()
+            : `Format ${i + 1}`,
+        evidence,
+        // Two different bars, and mixing them up hides exactly the
+        // formats that need the warning most: MIN_FORMAT_EVIDENCE is
+        // what it takes to EXIST as a format at all, while MIN_WINNERS
+        // is what it takes to be called PROVEN. A format sitting between
+        // the two is real enough to show and thin enough to flag — and a
+        // format sitting exactly on the lower floor is the thinnest
+        // thing on screen, so it must never come through unflagged.
+        lowConfidence: evidence.length < MIN_WINNERS,
+      };
+    })
+    // Strongest first by how many images back it. The model is asked for
+    // this order already; sorting makes it true rather than hoped-for,
+    // because formats[0] is what fills the flat fields below and what
+    // generation defaults to.
+    .sort((a, b) => b.evidence.length - a.evidence.length)
+    .slice(0, MAX_FORMATS);
+
+  // Mirror the strongest format into the flat fields. Everything written
+  // before formats existed — the generation prompt, the overlay
+  // defaults, the panel — reads those and keeps working untouched.
+  return { ...formats[0], formats, avoid, caveats };
 }
 
 /* ------------------------------------------------------------------ *
@@ -655,6 +816,47 @@ export type GenerationPlan = {
   overlayCandidates: string[];
   zone: TextZone;
 };
+
+/**
+ * The profile as ONE format, for handing to the prompt writer.
+ *
+ * The whole point of finding several formats is undone if all of them go
+ * into the prompt together — the model would blend them right back into
+ * the average we just stopped producing. So a generation run commits to
+ * one look, and the prompt writer never learns the others exist.
+ *
+ * Out-of-range or missing index falls back to the strongest format,
+ * which is also exactly what a pre-formats profile yields.
+ */
+export function profileForFormat(
+  profile: ThumbnailStyleProfile,
+  formatIndex?: number | null
+): { profile: ThumbnailStyleProfile; label: string | null; index: number } {
+  const formats = profile.formats;
+  if (!formats || formats.length === 0) {
+    return { profile: { ...profile, formats: undefined }, label: null, index: 0 };
+  }
+  const i =
+    typeof formatIndex === "number" && formatIndex >= 0 && formatIndex < formats.length
+      ? formatIndex
+      : 0;
+  const chosen = formats[i];
+  return {
+    profile: {
+      composition: chosen.composition,
+      palette: chosen.palette,
+      subject: chosen.subject,
+      textTreatment: chosen.textTreatment,
+      mood: chosen.mood,
+      // Avoid/caveats are channel-wide, not per-format — they still apply.
+      avoid: profile.avoid,
+      caveats: profile.caveats,
+      formats: undefined,
+    },
+    label: chosen.label,
+    index: i,
+  };
+}
 
 const PROMPT_INSTRUCTIONS = `You write prompts for an image generation model that will produce a YouTube thumbnail BACKGROUND, plus the short headline that will be composited on top of it afterwards.
 
@@ -705,12 +907,18 @@ export async function buildGenerationPlan(input: {
   /** True when the bundled font can't render this script, so the image
    *  model has to draw the text itself. Changes the prompt materially. */
   modelRendersText: boolean;
+  /** Which of the channel's looks to build for. Defaults to the strongest. */
+  formatIndex?: number | null;
 }): Promise<GenerationPlan> {
+  // Commit to a single look before anything else reads the profile.
+  const picked = profileForFormat(input.profile, input.formatIndex);
+  const profile = picked.profile;
+
   if (isDryRun()) {
     return {
       prompt: dryRunPrompt(input.title),
       overlayCandidates: [input.title],
-      zone: input.headlineZone ?? input.profile.composition.textZone,
+      zone: input.headlineZone ?? profile.composition.textZone,
     };
   }
 
@@ -726,7 +934,7 @@ export async function buildGenerationPlan(input: {
     : "The channel supplies no brand assets, so every subject is derived from the style profile alone.";
 
   const textLine = input.modelRendersText
-    ? `IMPORTANT OVERRIDE: this channel's language cannot be rendered by our text compositor, so the image model MUST draw the headline itself, spelled exactly as given. Include the exact headline text in the prompt, in quotes, and describe its treatment (${input.profile.textTreatment.uppercase ? "uppercase" : "sentence case"}, heavy weight, high contrast).`
+    ? `IMPORTANT OVERRIDE: this channel's language cannot be rendered by our text compositor, so the image model MUST draw the headline itself, spelled exactly as given. Include the exact headline text in the prompt, in quotes, and describe its treatment (${profile.textTreatment.uppercase ? "uppercase" : "sentence case"}, heavy weight, high contrast).`
     : "The image must contain no text at all.";
 
   const languageLine = input.channelTitles?.length
@@ -743,8 +951,12 @@ export async function buildGenerationPlan(input: {
 
 ${languageLine}
 
-CHANNEL STYLE PROFILE (derived from thumbnails that beat this channel's median):
-${JSON.stringify(input.profile, null, 2)}
+CHANNEL STYLE PROFILE (derived from thumbnails that beat this channel's median)${
+      picked.label
+        ? ` — build for this channel's "${picked.label}" format, which is ONE of the looks that works here. Follow it; do not average it with anything else`
+        : ""
+    }:
+${JSON.stringify(profile, null, 2)}
 
 ${brandLine}
 ${textLine}
@@ -765,7 +977,7 @@ ${ASPECT_INSTRUCTIONS[input.aspect ?? DEFAULT_ASPECT]}`,
     prompt:
       typeof parsed.prompt === "string" && parsed.prompt.trim()
         ? parsed.prompt.trim()
-        : fallbackPrompt(input.profile, input.title, input.aspect ?? DEFAULT_ASPECT),
+        : fallbackPrompt(profile, input.title, input.aspect ?? DEFAULT_ASPECT),
     // Falling back to the raw title is better than an empty headline —
     // the user can edit it for free, and a blank cover is useless.
     overlayCandidates: candidates.length ? candidates : [input.title],

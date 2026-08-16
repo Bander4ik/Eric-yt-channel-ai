@@ -186,7 +186,16 @@ This is what generates transcripts for videos that don't have YouTube captions. 
 
 This is what lets the app pull real Analytics data (views over time, retention, revenue, traffic sources) directly from YouTube on your behalf.
 
-1. In the same Google Cloud project as step 4.3, enable **YouTube Analytics API** the same way (**APIs & Services → Library** → search → **Enable**).
+1. In the same Google Cloud project as step 4.3, enable **two** more APIs the same way (**APIs & Services → Library** → search the name → **Enable**):
+   - **YouTube Analytics API** — views over time, retention, traffic sources, revenue.
+   - **YouTube Reporting API** — thumbnail **impressions and click-through rate**. This is a separate service from the two above and is **off by default**; if you skip it, everything else still works, but the thumbnail tools fall back to ranking your covers by views instead of by clicks.
+
+   > **Why CTR needs its own API.** Click-through is private owner-only data, so no API key can reach it — only a connected Google account. It also arrives differently: Google prepares a file once a day rather than answering a question on the spot. Two consequences worth knowing up front:
+   >
+   > - The **first file can take up to 48 hours** after you enable this. Nothing is broken in the meantime.
+   > - Google only backfills **30 days before the day you enable it**, so enabling it early is worth doing even if you don't need CTR yet — the history you skip cannot be recovered later.
+   >
+   > Once files start arriving, the app collects them whenever you open it. Your computer does **not** need to be running when a file is generated: Google keeps each one for 60 days.
 2. **APIs & Services → OAuth consent screen**:
    - **User Type**: External → **Create**.
    - **App name**: `YouTube Channel AI VIP`. **User support email**: your email. **Developer contact email**: your email. **Save and continue**.

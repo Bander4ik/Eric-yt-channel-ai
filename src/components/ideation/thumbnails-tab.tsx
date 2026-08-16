@@ -57,7 +57,7 @@ type Winner = {
 
 type StyleTrait = { summary: string; n: number; evidence: string[] };
 
-type StyleProfile = {
+type StyleTraitSet = {
   composition: StyleTrait & { textZone: TextZone };
   palette: StyleTrait & { dominant: string[] };
   subject: StyleTrait & { facePresent: boolean; recurringElement: string | null };
@@ -68,6 +68,18 @@ type StyleProfile = {
     shadow: boolean;
   };
   mood: StyleTrait;
+};
+
+/** One distinct look that works on this channel. */
+type StyleFormat = StyleTraitSet & {
+  label: string;
+  evidence: string[];
+  lowConfidence: boolean;
+};
+
+type StyleProfile = StyleTraitSet & {
+  /** Absent on profiles analysed before formats existed — those are one look. */
+  formats?: StyleFormat[];
   avoid: string[];
   caveats: string[];
 };
@@ -271,6 +283,10 @@ export function ThumbnailsTab() {
   const [note, setNote] = useState("");
   const [variants, setVariants] = useState(DEFAULT_VARIANTS);
   const [aspect, setAspect] = useState<AspectChoice>(DEFAULT_ASPECT);
+  // Which of the channel's winning looks to generate in. 0 is the
+  // strongest, and the only one a single-look channel has — so this
+  // stays correct without the user ever touching it.
+  const [formatIndex, setFormatIndex] = useState(0);
   const [ownVideos, setOwnVideos] = useState<OwnVideo[]>([]);
   const [remix, setRemix] = useState<OwnVideo | null>(null);
   const [videoQuery, setVideoQuery] = useState("");
@@ -476,6 +492,14 @@ export function ThumbnailsTab() {
           aspect,
           sourceKind: remix ? "video_remix" : sourceId ? "idea" : "manual",
           sourceId: remix ? remix.id : sourceId ?? null,
+          // Clamped against THIS channel's format count. Switching from a
+          // 3-look channel to a 2-look one would otherwise send an index
+          // the server silently falls back to 0 for — generating a
+          // different look than the one highlighted on screen.
+          formatIndex: Math.min(
+            formatIndex,
+            Math.max(0, (style?.profile?.formats?.length ?? 1) - 1)
+          ),
           prompt: opts.reusePrompt ? promptDraft : undefined,
         }),
       });
@@ -574,6 +598,8 @@ export function ThumbnailsTab() {
         busy={busy}
         windowMonths={windowMonths}
         onWindowChange={previewWindow}
+        formatIndex={formatIndex}
+        onSelectFormat={setFormatIndex}
       />
 
       <BrandAssetsPanel channelId={channelId} provider={provider} />
@@ -1201,12 +1227,16 @@ function BasisPanel({
   busy,
   windowMonths,
   onWindowChange,
+  formatIndex,
+  onSelectFormat,
 }: {
   style: StyleResponse | null;
   onAnalyse: () => void;
   busy: boolean;
   windowMonths: number | null | undefined;
   onWindowChange: (months: number | null) => void;
+  formatIndex: number;
+  onSelectFormat: (i: number) => void;
 }) {
   if (!style) return null;
   const { available, winners, profile, job, window: win } = style;
@@ -1362,7 +1392,14 @@ function BasisPanel({
           <WinnerStrip winners={[...winners.own, ...winners.competitor]} />
         )}
 
-        {profile && <ProfileSummary profile={profile} />}
+        {profile && (
+          <ProfileSummary
+            profile={profile}
+            formatIndex={formatIndex}
+            onSelectFormat={onSelectFormat}
+            minWinners={available.minWinners}
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -1427,16 +1464,73 @@ function WinnerStrip({ winners }: { winners: Winner[] }) {
   );
 }
 
-function ProfileSummary({ profile }: { profile: StyleProfile }) {
+function ProfileSummary({
+  profile,
+  formatIndex,
+  onSelectFormat,
+  minWinners,
+}: {
+  profile: StyleProfile;
+  formatIndex: number;
+  onSelectFormat: (i: number) => void;
+  /** The channel-wide "this is proven" bar, from the server. */
+  minWinners: number;
+}) {
+  // Worked out here from the evidence count rather than read from the
+  // stored flag, so a profile analysed before this rule changed still
+  // shows an honest warning instead of the value frozen into it.
+  const isThin = (f: StyleFormat) => f.evidence.length < minWinners;
+  // Several looks can win on one channel. Showing only the strongest —
+  // or worse, an average of all of them — is what made generated covers
+  // feel generic, so each one gets its own set of traits and its own
+  // button. One format (or an older profile) renders exactly as before.
+  const formats = profile.formats ?? [];
+  const multi = formats.length > 1;
+  const shown: StyleTraitSet = multi
+    ? formats[Math.min(formatIndex, formats.length - 1)]
+    : profile;
+
   const rows: Array<[string, StyleTrait]> = [
-    ["Composition", profile.composition],
-    ["Colour", profile.palette],
-    ["Subject", profile.subject],
-    ["Headline", profile.textTreatment],
-    ["Mood", profile.mood],
+    ["Composition", shown.composition],
+    ["Colour", shown.palette],
+    ["Subject", shown.subject],
+    ["Headline", shown.textTreatment],
+    ["Mood", shown.mood],
   ];
   return (
     <div className="space-y-1.5 border-t border-border pt-3 text-sm">
+      {multi && (
+        <div className="mb-3 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            This channel has <b>{formats.length} looks</b> that beat its median.
+            Pick the one to generate in — they are different on purpose.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {formats.map((f, i) => (
+              <button
+                key={`${f.label}-${i}`}
+                type="button"
+                onClick={() => onSelectFormat(i)}
+                className={
+                  i === Math.min(formatIndex, formats.length - 1)
+                    ? "rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium"
+                    : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:border-foreground/40"
+                }
+              >
+                {f.label}
+                <span className="ml-1.5 opacity-60">{f.evidence.length}</span>
+                {isThin(f) && <span className="ml-1" title="Thin evidence">·</span>}
+              </button>
+            ))}
+          </div>
+          {isThin(formats[Math.min(formatIndex, formats.length - 1)]) && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Only {formats[Math.min(formatIndex, formats.length - 1)].evidence.length}{" "}
+              thumbnails back this look — treat it as worth testing, not proven.
+            </p>
+          )}
+        </div>
+      )}
       {rows.map(([label, trait]) =>
         trait.summary ? (
           <div key={label} className="flex gap-2">

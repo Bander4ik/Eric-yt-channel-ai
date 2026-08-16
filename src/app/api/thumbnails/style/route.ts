@@ -4,9 +4,11 @@ import {
   getActiveChannelId,
   getThumbnailStyleProfile,
   getThumbnailStyleWindowSetting,
+  ownWinnerBasis,
   saveThumbnailStyleProfile,
   setThumbnailStyleWindowMonths,
 } from "@/lib/db";
+import { syncReachReports } from "@/lib/yt-reporting";
 import {
   analyseThumbnailStyle,
   resolveAnalysisProvider,
@@ -130,6 +132,10 @@ export async function GET(req: Request) {
       savedWidened: row ? row.window_widened === 1 : false,
     },
     stale: ageMs !== null && ageMs > PROFILE_MAX_AGE_MS,
+    // Which metric a run started right now would rank the channel's own
+    // winners on. Shown in the tab so the panel can say what the pattern
+    // was learned from instead of leaving the user to assume.
+    winnerBasis: ownWinnerBasis(channelId, selection.windowMonths),
     job: readJob(jobKey(THUMBNAIL_STYLE_JOB, channelId)),
   });
 }
@@ -211,10 +217,31 @@ export async function POST(req: Request) {
     );
   }
 
+  // Pull in any click-through days that accumulated since last time,
+  // BEFORE choosing winners — otherwise a channel that has CTR would be
+  // ranked on views for one more run. Best-effort by design: no Google
+  // connection, a disabled Reporting API or a network blip must not stop
+  // a style analysis that works perfectly well on views.
+  try {
+    const reach = await syncReachReports(channelId);
+    if (!reach.available) {
+      log.info("thumbnails", "Click-through unavailable, ranking on views", {
+        channelId,
+        reason: reach.note,
+      });
+    }
+  } catch (err) {
+    log.warn("thumbnails", "Reach sync failed before style analysis", {
+      channelId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const selection = selectThumbnailWindow(channelId, requestedMonths);
   const ownCount = selection.own.length;
   const compCount = selection.competitor.length;
   const total = ownCount + compCount;
+  const ownBasis = ownWinnerBasis(channelId, selection.windowMonths);
 
   // Starvation guard: a handful of images is not a pattern, it's a
   // guess. Widening already happened inside selectThumbnailWindow -- if
@@ -282,6 +309,7 @@ export async function POST(req: Request) {
             analyser,
             own: refs.own,
             competitor: refs.competitor,
+            ownBasis,
           });
 
       // Confidence is decided by OUR winner count, not by the model's
@@ -326,6 +354,7 @@ export async function POST(req: Request) {
     ok: true,
     started: true,
     total,
+    winnerBasis: ownBasis,
     window: {
       months: selection.windowMonths,
       requestedMonths: selection.requestedWindowMonths,

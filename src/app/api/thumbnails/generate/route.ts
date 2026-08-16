@@ -48,6 +48,7 @@ type Body = {
   prompt?: unknown;
   overlayText?: unknown;
   zone?: unknown;
+  formatIndex?: unknown;
 };
 
 const SOURCE_KINDS = ["idea", "signal", "video_remix", "manual"] as const;
@@ -187,6 +188,13 @@ export async function POST(req: Request) {
         userNote: typeof body.userNote === "string" ? body.userNote : null,
         variants,
         aspect,
+        // Which winning look to build for. Absent = the strongest one,
+        // which is what every caller written before formats existed
+        // means, and what a single-look channel has anyway.
+        formatIndex:
+          typeof body.formatIndex === "number" && Number.isInteger(body.formatIndex)
+            ? body.formatIndex
+            : null,
         reusePrompt: typeof body.prompt === "string" ? body.prompt : null,
         overlayText:
           typeof body.overlayText === "string" ? body.overlayText : null,
