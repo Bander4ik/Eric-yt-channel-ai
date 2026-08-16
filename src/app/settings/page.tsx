@@ -12,9 +12,6 @@ import { cn } from "@/lib/utils";
 import { YouTubeChannelBinder } from "@/components/youtube-channel-binder";
 import { YouTubeCookies } from "@/components/youtube-cookies";
 import { GoogleOAuthConnector } from "@/components/google-oauth-connector";
-import { ClaudeUsage } from "@/components/claude-usage";
-import { ApifyUsage } from "@/components/apify-usage";
-import { DeepgramUsage } from "@/components/deepgram-usage";
 import { ImageProviderSettings } from "@/components/image-provider-settings";
 
 type Name = "claude" | "deepgram" | "apify" | "youtube" | "google_gemini";
@@ -28,15 +25,23 @@ type Help = { title: string; steps: string[]; link: string; linkLabel: string };
 type Item = { name: Name; label: string; desc: string; placeholder: string; help: Help };
 
 /**
- * Settings — merged with the former /integrations page (2026-07).
+ * Settings — one page, three questions, in the order a new user hits
+ * them: what do I have to fill in, which channels am I working on, and
+ * everything else.
  *
- * Everything a client needs lives on ONE page now, ordered by how badly
- * you need it: Required to work → Channel → Optional → Usage →
- * Appearance. The former Integrations page was a tall stack of large
- * cards with help steps permanently expanded — this rebuilds every key
- * as a single compact row (name + status + masked value + set/replace),
- * with help collapsed into a native <details>. Sections 3-5 are
- * collapsed by default so the page opens on what actually matters.
+ * Rebuilt 2026-08-16 after a client said the app had "too much stuff, I
+ * don't know how to use it". The page had grown to 37 controls in five
+ * collapsible sections (Required / Channel / Optional / Usage /
+ * Appearance) — a filing system rather than an answer. Cut here: the
+ * Claude ledger with its 100 past turns, token counters and
+ * Clear-history button; the Apify and Deepgram credit bars (their
+ * "limit" was a number the user invented — it capped nothing); and the
+ * section wrappers themselves. What replaced the whole Usage section is
+ * one line of spend beside the AI key.
+ *
+ * The image-provider form moved UP out of "Optional": it is the fuel for
+ * the thumbnail generator, which is the feature clients actually open
+ * the app for.
  *
  * The API contract is untouched: GET/POST /api/integrations,
  * {integrations: Record<name, {hasKey, masked, enabled}>}.
@@ -168,11 +173,11 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.settings.subtitle}</p>
       </header>
 
-      {/* 1. Required to work — always open, the minimum a client needs. */}
+      {/* 1. Fill these in — the three keys that make the app work. */}
       <section className="space-y-2">
         <SectionHeader
-          title="Required to work"
-          desc="A YouTube Data API key to load videos and stats, plus one AI provider to power chat / Hook Lab / advisor."
+          title="Fill these in"
+          desc="Three keys and the app works: YouTube to load your videos, one AI to think, one image provider to draw thumbnails. Nothing further down this page is required."
         />
         <div className="space-y-2">
           <KeyRow
@@ -180,125 +185,182 @@ export default function SettingsPage() {
             status={status?.youtube}
             onSave={(v) => saveIntegration("youtube", v)}
           />
-          <AiProviderPicker
-            claudeItem={items.claude}
-            geminiItem={items.google_gemini}
-            status={status}
-            onSave={saveIntegration}
-          />
-          <details className="rounded-md border border-border">
-            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-muted/30">
-              Google OAuth (optional, recommended) — Studio Analytics &amp; revenue
-            </summary>
-            <div className="border-t border-border/60 p-3">
-              <GoogleOAuthConnector />
-            </div>
-          </details>
-        </div>
-      </section>
-
-      {/* 2. Channel */}
-      <section className="space-y-2">
-        <SectionHeader title="Channel" desc="Bind and manage your YouTube channel." />
-        <YouTubeChannelBinder hasKey={!!status?.youtube?.hasKey} />
-        <ShortsAnalysisSetting />
-        <YouTubeCookies />
-      </section>
-
-      {/* 3. Optional — collapsed, quiet by default. */}
-      <details className="rounded-md border border-border/60 bg-muted/10">
-        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
-          Optional
-        </summary>
-        <div className="space-y-3 border-t border-border/60 p-3">
-          <p className="text-xs text-muted-foreground">
-            Add when you want the feature. Deepgram unlocks transcription for
-            videos without YouTube captions. Apify is the competitor-sync
-            fallback when no YouTube Data API key is set.
-          </p>
-          <KeyRow
-            item={items.deepgram}
-            status={status?.deepgram}
-            onSave={(v) => saveIntegration("deepgram", v)}
-          />
-          <KeyRow
-            item={items.apify}
-            status={status?.apify}
-            onSave={(v) => saveIntegration("apify", v)}
-          />
+          <div className="space-y-1">
+            <AiProviderPicker
+              claudeItem={items.claude}
+              geminiItem={items.google_gemini}
+              status={status}
+              onSave={saveIntegration}
+            />
+            {/* The whole Usage section came down to this one line. A
+                running cost is the only usage number that can make
+                somebody stop and change something; token counts and
+                cache-read totals cannot. */}
+            <AiSpendLine enabled={!!status?.claude?.hasKey} />
+          </div>
           <ImageProviderSettings />
         </div>
-      </details>
+      </section>
 
-      {/* 4. Usage — collapsed, quiet by default. */}
-      <details className="rounded-md border border-border/60 bg-muted/10">
-        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
-          Usage
-        </summary>
-        <div className="space-y-3 border-t border-border/60 p-3">
-          <ClaudeUsage enabled={!!status?.claude?.hasKey} />
-          <ApifyUsage enabled={!!status?.apify?.hasKey} />
-          <DeepgramUsage enabled={!!status?.deepgram?.hasKey} />
-        </div>
-      </details>
-
-      {/* 5. Appearance — collapsed, quiet by default. */}
-      <details className="rounded-md border border-border/60 bg-muted/10">
-        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
-          Appearance
-        </summary>
-        <div className="space-y-3 border-t border-border/60 p-3">
-          <div>
-            <div className="mb-2 text-sm font-medium">{t.settings.theme}</div>
-            <div className="flex gap-2">
-              <Button
-                variant={theme === "light" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setTheme("light")}
-              >
-                {t.settings.themeLight}
-              </Button>
-              <Button
-                variant={theme === "dark" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setTheme("dark")}
-              >
-                {t.settings.themeDark}
-              </Button>
-            </div>
+      {/* 2. Your channels */}
+      <section className="space-y-2">
+        <SectionHeader
+          title="Your channels"
+          desc="Paste a channel link to add it. Connecting Google is what unlocks the numbers YouTube keeps private: revenue, audience, and how often people click your thumbnail."
+        />
+        <YouTubeChannelBinder hasKey={!!status?.youtube?.hasKey} />
+        <details className="rounded-md border border-border">
+          <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-muted/30">
+            Connect Google — revenue, audience and thumbnail click-through
+          </summary>
+          <div className="border-t border-border/60 p-3">
+            <GoogleOAuthConnector />
           </div>
+        </details>
+        <ShortsAnalysisSetting />
+      </section>
 
-          <div>
-            <div className="mb-2 text-sm font-medium">Optional sections</div>
-            <p className="mb-2 text-xs text-muted-foreground">
-              Parts of the app you can hide if they don&apos;t fit how you work.
-              Nothing here is deleted — turning one back on restores it with
-              whatever was in it.
+      {/* 3. Everything else — one line plus one drawer.
+
+          This used to be three collapsed sections (Optional, Usage,
+          Appearance) holding 20-odd controls. A client who runs his
+          channels alone said the app had "too much stuff, I don't know
+          how to use it", and a settings page that files 37 controls into
+          five drawers is a filing system, not an answer. What survives
+          here either changes something visible in one click (theme) or
+          is a genuine escape hatch a few people need (the drawer). The
+          usage ledgers are gone: 100 rows of past AI turns, token
+          counters and credit bars for keys most users never set. */}
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-3">
+          <span className="text-sm font-medium">{t.settings.theme}</span>
+          <Button
+            variant={theme === "light" ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setTheme("light")}
+          >
+            {t.settings.themeLight}
+          </Button>
+          <Button
+            variant={theme === "dark" ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setTheme("dark")}
+          >
+            {t.settings.themeDark}
+          </Button>
+        </div>
+
+        <details className="rounded-md border border-border/60 bg-muted/10">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground">
+            Advanced — extra keys, and parts of the app you can hide
+          </summary>
+          <div className="space-y-3 border-t border-border/60 p-3">
+            <p className="text-xs text-muted-foreground">
+              Nothing here is needed to use the app. Deepgram transcribes the
+              rare video that has no YouTube captions — captions are free and
+              come first. Apify only steps in for competitor sync when no
+              YouTube key is set.
             </p>
-            <div className="space-y-2">
-              <ToggleRow
-                label="Ideas board"
-                description="Show the Board tab in Ideation. It's a kanban for moving ideas through scripting, editing and publishing — worth having if a team works in the app with you, and mostly dead weight if you plan alone or already use Trello or Notion. Your cards are kept either way."
-                value={showIdeasBoard}
-                onChange={setShowIdeasBoard}
-              />
-              <ToggleRow
-                label="Editor billing card"
-                description="Show the editor payouts widget on the Dashboard. Useful only if you pay an editor per video."
-                value={showEditorBilling}
-                onChange={setShowEditorBilling}
-              />
-              <ToggleRow
-                label="Logs in sidebar"
-                description="Show the Logs entry in the left navigation. The /logs route always works via direct URL — this just controls visibility."
-                value={showLogs}
-                onChange={setShowLogs}
-              />
+            <KeyRow
+              item={items.deepgram}
+              status={status?.deepgram}
+              onSave={(v) => saveIntegration("deepgram", v)}
+            />
+            <KeyRow
+              item={items.apify}
+              status={status?.apify}
+              onSave={(v) => saveIntegration("apify", v)}
+            />
+            <YouTubeCookies />
+            <div className="pt-1">
+              <div className="mb-2 text-sm font-medium">
+                Parts of the app you can bring back
+              </div>
+              <p className="mb-2 text-xs text-muted-foreground">
+                All three are off by default. Nothing is deleted — turning one
+                on restores it with whatever was in it.
+              </p>
+              <div className="space-y-2">
+                <ToggleRow
+                  label="Ideas board"
+                  description="A kanban that moves ideas through scripting, editing and publishing. Worth having when a team works in the app with you; dead weight when you plan alone, because you are the only one who can move a card. Your cards are kept either way."
+                  value={showIdeasBoard}
+                  onChange={setShowIdeasBoard}
+                />
+                <ToggleRow
+                  label="Editor billing card"
+                  description="A payouts widget on the Dashboard. Useful only if you pay an editor per video."
+                  value={showEditorBilling}
+                  onChange={setShowEditorBilling}
+                />
+                <ToggleRow
+                  label="Logs in sidebar"
+                  description="The raw activity stream, with the exact error when something fails. The /logs address always works — this only puts it in the menu."
+                  value={showLogs}
+                  onChange={setShowLogs}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </details>
+        </details>
+      </section>
     </div>
+  );
+}
+
+/**
+ * One line of spend beside the AI key: what the app has cost in the last
+ * 24 hours and in total. This is all that is left of a Usage section
+ * that used to carry per-turn rows, token counts and a Clear-history
+ * button — none of which change what anybody does next.
+ *
+ * Claude-only, because only Claude reports usage back to us; with a
+ * Gemini key the line simply does not render rather than showing a
+ * confident zero.
+ */
+function AiSpendLine({ enabled }: { enabled: boolean }) {
+  const [data, setData] = useState<{
+    totalCostMillicents: number;
+    last24hCostMillicents: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/claude/usage");
+        if (!res.ok || !alive) return;
+        const j = (await res.json()) as {
+          totalCostMillicents: number;
+          last24hCostMillicents: number;
+        };
+        if (alive) setData(j);
+      } catch {
+        /* local server unreachable — the key row above says enough */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [enabled]);
+
+  if (!enabled || !data) return null;
+
+  const usd = (millicents: number): string => {
+    const v = millicents / 100_000;
+    if (v < 0.01) return `$${v.toFixed(4)}`;
+    if (v < 1) return `$${v.toFixed(3)}`;
+    return `$${v.toFixed(2)}`;
+  };
+
+  return (
+    <p className="px-1 text-xs text-muted-foreground">
+      AI spend: {usd(data.last24hCostMillicents)} in the last 24h ·{" "}
+      {usd(data.totalCostMillicents)} total
+    </p>
   );
 }
 

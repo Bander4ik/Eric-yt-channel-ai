@@ -72,6 +72,7 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
   const [savedCount, setSavedCount] = useState<number | null>(null);
   const [boundChannels, setBoundChannels] = useState<BoundChannel[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Which row is mid-flight on a Google connect/verify/disconnect.
   const [pendingChannelId, setPendingChannelId] = useState<string | null>(null);
   // Per-channel OAuth status: { [channelId]: { connected, perChannel,
   // refreshTokenAgeDays, publishedProven } }
@@ -153,21 +154,6 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
   useEffect(() => {
     loadBound();
   }, [loadBound]);
-
-  const switchTo = async (id: string) => {
-    setPendingChannelId(id);
-    try {
-      await fetch("/api/channels/active", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      // Hard refresh — every page renders against the active channel.
-      window.location.reload();
-    } finally {
-      setPendingChannelId(null);
-    }
-  };
 
   const connectGoogle = (id: string) => {
     // Redirect-style flow — Google sends the user back to /settings
@@ -373,8 +359,8 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
                 );
               })
               .map((c) => {
-              const isActive = c.id === activeId;
               const pending = pendingChannelId === c.id;
+              const isActive = c.id === activeId;
               const isEditing = editingChannelId === c.id;
               return (
                 <li
@@ -484,22 +470,11 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    {!isActive && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => switchTo(c.id)}
-                        disabled={pending || busy}
-                        className="h-7 px-2 text-[11px]"
-                      >
-                        {pending ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          "Switch"
-                        )}
-                      </Button>
-                    )}
+                    {/* No "Switch" button here any more: the channel
+                        switcher in the top bar renders on every page,
+                        including this one, and does exactly the same
+                        thing. Two controls for one action is one of the
+                        reasons this page read as clutter. */}
                     {/* Per-channel Google OAuth */}
                     {oauthByChannel[c.id]?.connected && oauthByChannel[c.id]?.perChannel ? (
                       <>
@@ -615,8 +590,8 @@ export function YouTubeChannelBinder({ hasKey }: { hasKey: boolean }) {
         )}
         <p className="text-[11px] text-muted-foreground">
           After Sync the channel becomes active automatically. Existing
-          channels stay connected — switch between them via this list or
-          the topbar dropdown.
+          channels stay connected — switch between them with the dropdown
+          in the top bar, on any page.
         </p>
       </div>
 
@@ -840,18 +815,26 @@ function ChannelMetaEditor({
             <option value="not_eligible">Not eligible</option>
           </select>
         </div>
-        <div className="space-y-1 sm:col-span-2">
-          <Label className="text-[10px] uppercase text-muted-foreground">
-            Notes
-          </Label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Anything else to remember about this channel"
-            rows={2}
-            className="w-full resize-y rounded-md border bg-background px-2 py-1 text-xs"
-          />
-        </div>
+        {/* Notes only show once there is something in them. The field
+            is write-only by design — nothing in the app reads
+            channels.notes, not even the AI chat's SQL view — so it is
+            an invitation to type into a void. Anyone who already typed
+            there keeps seeing and editing their text; nobody new is
+            offered the box. */}
+        {notes.trim() !== "" && (
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[10px] uppercase text-muted-foreground">
+              Notes
+            </Label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Anything else to remember about this channel"
+              rows={2}
+              className="w-full resize-y rounded-md border bg-background px-2 py-1 text-xs"
+            />
+          </div>
+        )}
       </div>
       {err && (
         <div className="rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] text-destructive">

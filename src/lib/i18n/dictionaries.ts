@@ -869,7 +869,7 @@ export const dictionaries: { en: DictionaryShape } = {
         optionCustom: "Custom",
         customSuffix: "seconds",
         affects:
-          "Changes: Dashboard, Channel analytics, Hook Lab, the Formula analyzer and Packaging.",
+          "Changes: Dashboard, Channel analytics, Hook Lab and Packaging.",
         notAffected:
           "Does not change: your Videos list (it has its own short/long filter), and nothing is deleted — turn this off and every number comes straight back.",
         saving: "Saving…",
