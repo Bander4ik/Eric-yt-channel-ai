@@ -623,6 +623,7 @@ Rules you must follow:
 - A format needs at least ${MIN_FORMAT_EVIDENCE} images. Images that fit no format go in "caveats", never into a format they don't belong to.
 - Every format lists the video ids it was read from in its own "evidence". Every trait also lists its supporting ids, and "n" must equal that list's length.
 - A trait supported by fewer than ${MIN_WINNERS} images across the whole set belongs in "caveats", not stated as a channel-wide rule.
+- ONE EXCEPTION, and it matters: if a distinctive treatment appears in the channel's single strongest cover — the highest multiplier in the set — name it even when it appears only once, as "worth-testing". Dropping it for thin evidence is how a channel loses the exact device that identifies it: a crime channel whose top cover is built like a newspaper page had that demoted to a one-off, and every cover generated afterwards came back as generic red-and-black true crime with no newspaper anywhere.
 - Do not name any specific video's subject matter as a rule. You are extracting visual GRAMMAR (composition, colour, typography, subject scale, mood), not topics.
 - "label" is a short human name for the format, 2-5 words, describing the LOOK — e.g. "Face + shock reaction", "Wide landscape, huge text". Never a topic.
 - Write in plain English. This gets shown to the channel owner.
@@ -1082,6 +1083,36 @@ export function channelUsesHeadline(profile: ThumbnailStyleProfile): boolean {
   return true;
 }
 
+
+/**
+ * Reorders headline candidates so the ones inside the channel's own word
+ * band come first.
+ *
+ * Never rewrites anyone's words — a headline chopped to length by code
+ * reads like a headline chopped by code. It only changes which of the
+ * model's three offers gets used.
+ */
+export function orderByWordBand(candidates: string[], band: string): string[] {
+  const bounds = (band ?? "").match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (!bounds || candidates.length < 2) return candidates;
+  const low = Number(bounds[1]);
+  const high = Number(bounds[2]);
+  if (!Number.isFinite(low) || !Number.isFinite(high) || high < low) {
+    return candidates;
+  }
+  const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
+  const fits = candidates.filter((c) => {
+    const n = words(c);
+    return n >= low && n <= high;
+  });
+  if (fits.length > 0) {
+    return [...fits, ...candidates.filter((c) => !fits.includes(c))];
+  }
+  // Nothing fits: shortest first. Overshooting the band by one word is a
+  // smaller failure than by four.
+  return [...candidates].sort((a, b) => words(a) - words(b));
+}
+
 export function profileForFormat(
   profile: ThumbnailStyleProfile,
   formatIndex?: number | null
@@ -1147,6 +1178,7 @@ Critical constraints:
 ${textRule}
 ${zoneRule}
 - Write the headline candidates in the channel's own language, shown by the sample titles you are given. The subject matter is irrelevant to this: a video about Norway on an English channel still gets an English headline. Never translate the channel's language into another one.
+- CASTING follows the channel read, not the video's topic alone. If the channel read says who appears on these covers — the era they are from, how they are dressed, what kind of people they are — every figure in the prompt must match that. A channel whose winners show archival 1950s figures got a cover with seven modern booking photos on a 1957 story; the words were right and the casting was from another channel entirely.
 - If the profile names a RECURRING ELEMENT, it is the one thing you must tell the model to reproduce rather than merely derive — it is the exception to "do not copy the references". A mascot, a blank-faced everyman, a coloured arrow, a frame, a badge: this is the channel's signature, and a cover without it is a cover from a different channel. Say in the prompt what it looks like and that it must appear exactly that way.
 - When that recurring element is a way of DRAWING CHARACTERS (a mask, a blank face, a stick figure, a specific art style for people), it applies to EVERY character in the frame, not just the main one. Getting this wrong is what produces a cover with the channel's own mascot next to a stranger drawn in some other style, which reads as two different channels in one picture.
 
@@ -1353,9 +1385,20 @@ ${ASPECT_INSTRUCTIONS[input.aspect ?? DEFAULT_ASPECT]}`,
   });
   const parsed = parseJsonObject(raw);
 
-  const candidates = Array.isArray(parsed.overlayCandidates)
+  const rawCandidates = Array.isArray(parsed.overlayCandidates)
     ? (parsed.overlayCandidates as unknown[]).map(String).filter(Boolean)
     : [];
+
+  // The channel's own word band is measured and then was ignored: a
+  // channel whose covers run 2-5 words got a seven-word headline, 40%
+  // over its own top. Asking the model again is not a mechanism — the
+  // pick is ours, so make it deterministic. Take the first candidate
+  // that fits the band; if none fit, take the shortest, which is the
+  // closest thing to the channel's habit that was offered.
+  const candidates = orderByWordBand(
+    rawCandidates,
+    profile.textTreatment.wordCountBand
+  );
 
   return {
     prompt:
