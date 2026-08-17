@@ -218,6 +218,16 @@ const MARGIN_RATIO = 56 / 1280;
 const MAX_FONT_RATIO = 220 / 720;
 const MIN_FONT_RATIO = 24 / 720;
 const LINE_SPACING = 1.06;
+/**
+ * How much of the frame a side-anchored headline may occupy.
+ *
+ * 0.55 rather than a clean half: the subject in these covers sits on
+ * roughly the right 45%, and a hard 0.5 made three-word headlines shrink
+ * further than the channel's own covers do. Measured against this
+ * channel's winners, where the type block ends just before the face
+ * begins.
+ */
+const SIDE_ZONE_WIDTH_RATIO = 0.55;
 
 /**
  * PNG chunks the decoder must see, and nothing else.
@@ -352,7 +362,24 @@ function drawHeadline(
   height: number
 ): void {
   const margin = Math.round(width * MARGIN_RATIO);
-  const boxWidth = width - margin * 2;
+  // A headline anchored to one side gets HALF the frame to wrap in, not
+  // all of it.
+  //
+  // You only push a headline to the left or the right when something
+  // else owns the other side — on this channel it is a face, and the
+  // covers that won put 2-3 words in the empty corner beside it. Wrapping
+  // at full frame width let those words run straight across the subject,
+  // which is what "the text overlaps everything" meant. The narrower box
+  // makes the size search land smaller and break the line earlier, so the
+  // block stays in its own corner.
+  //
+  // Centre zones keep the whole width: text centred on the frame is a
+  // deliberate full-width design, not a corner. A banner (`plate`) is
+  // drawn edge to edge by definition, so it keeps the full width too.
+  const sideAnchored = /(^|-)(left|right)$/.test(spec.zone);
+  const boxWidth = Math.round(
+    (width - margin * 2) * (sideAnchored && !spec.plate ? SIDE_ZONE_WIDTH_RATIO : 1)
+  );
   const boxHeight = height * clamp(spec.maxHeightRatio, 0.1, 0.6);
 
   // Binary-search the largest size at which the wrapped text still fits
