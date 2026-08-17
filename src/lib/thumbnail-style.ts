@@ -114,6 +114,22 @@ const MAX_FORMATS = 3;
  */
 const MIN_FORMAT_EVIDENCE = 3;
 
+/**
+ * How many playbook rules we keep. Past eight the list stops being
+ * something a person follows before making a cover and becomes another
+ * wall to skim — which is the complaint this whole rebuild came from.
+ */
+const MAX_RULES = 8;
+
+/**
+ * How many below-median covers go in as the control group.
+ *
+ * Four, matching the build a client already runs successfully on his own
+ * channels. It is enough for a repeated failure to show up twice, and
+ * few enough that the model cannot mistake one bad month for a rule.
+ */
+export const MAX_OWN_LOSER_REFS = 4;
+
 export const MAX_OWN_REFS = 12;
 export const MAX_COMPETITOR_REFS = 12;
 
@@ -273,7 +289,37 @@ export type StyleFormat = StyleTraits & {
   lowConfidence: boolean;
 };
 
+/**
+ * One instruction from the channel playbook.
+ *
+ * `strength` is the honest half. "proven" means the winners have this
+ * and the underperformers largely do not; "worth-testing" means it is a
+ * hypothesis, including the very common case where the whole channel
+ * does it and so it explains nothing. The UI colours the two
+ * differently, because a rule that cannot fail its own test is worse
+ * than no rule — the owner rebuilds his covers around a coincidence.
+ *
+ * `psychology` is what the client asked for in as many words: not what
+ * the picture looks like, but what it promises the viewer in the half
+ * second before the click.
+ */
+export type PlaybookRule = {
+  rule: string;
+  evidence: string;
+  strength: "proven" | "worth-testing";
+  psychology: string;
+};
+
 export type ThumbnailStyleProfile = StyleTraits & {
+  /**
+   * One paragraph naming what this channel's cover system is, and what
+   * separates its winners from the rest. Shown first so the owner can
+   * catch a misread before trusting anything below it. Null on profiles
+   * built before the playbook existed.
+   */
+  channelRead?: string | null;
+  /** The playbook. Empty on profiles built before it existed. */
+  rules?: PlaybookRule[];
   /**
    * Every distinct look found, strongest first. Optional because
    * profiles cached before this existed have only the flat fields; a
@@ -291,7 +337,13 @@ export type ReferenceThumbnail = {
   videoId: string;
   title: string;
   multiplier: number;
-  source: "own" | "competitor";
+  /**
+   * `own_loser` images exist ONLY to be shown to the analysis as the
+   * control group. They must never reach the image model as style
+   * references — that is the difference between "learn what fails" and
+   * "copy what fails".
+   */
+  source: "own" | "competitor" | "own_loser";
   sourceLabel: string;
   bytes: Buffer;
   mimeType: "image/jpeg" | "image/png" | "image/webp";
@@ -391,15 +443,24 @@ export type CollectProgress = (done: number, total: number) => void;
  */
 async function downloadWinners(
   channelId: string,
-  winners: { own: ThumbnailWinner[]; competitor: ThumbnailWinner[] },
+  winners: {
+    own: ThumbnailWinner[];
+    competitor: ThumbnailWinner[];
+    ownLosers?: ThumbnailWinner[];
+  },
   onProgress?: CollectProgress
-): Promise<{ own: ReferenceThumbnail[]; competitor: ReferenceThumbnail[] }> {
-  const total = winners.own.length + winners.competitor.length;
+): Promise<{
+  own: ReferenceThumbnail[];
+  competitor: ReferenceThumbnail[];
+  ownLosers: ReferenceThumbnail[];
+}> {
+  const ownLosers = winners.ownLosers ?? [];
+  const total = winners.own.length + winners.competitor.length + ownLosers.length;
   let done = 0;
 
   const load = async (
     list: ThumbnailWinner[],
-    source: "own" | "competitor"
+    source: ReferenceThumbnail["source"]
   ): Promise<ReferenceThumbnail[]> => {
     const out: ReferenceThumbnail[] = [];
     for (const w of list) {
@@ -436,6 +497,7 @@ async function downloadWinners(
   return {
     own: await load(winners.own, "own"),
     competitor: await load(winners.competitor, "competitor"),
+    ownLosers: await load(ownLosers, "own_loser"),
   };
 }
 
@@ -479,9 +541,18 @@ export async function collectReferenceThumbnails(
  */
 export async function collectReferenceThumbnailsForWindow(
   channelId: string,
-  winners: { own: ThumbnailWinner[]; competitor: ThumbnailWinner[] },
+  winners: {
+    own: ThumbnailWinner[];
+    competitor: ThumbnailWinner[];
+    /** The control group. Analysis only — never sent to the image model. */
+    ownLosers?: ThumbnailWinner[];
+  },
   onProgress?: CollectProgress
-): Promise<{ own: ReferenceThumbnail[]; competitor: ReferenceThumbnail[] }> {
+): Promise<{
+  own: ReferenceThumbnail[];
+  competitor: ReferenceThumbnail[];
+  ownLosers: ReferenceThumbnail[];
+}> {
   return downloadWinners(channelId, winners, onProgress);
 }
 
@@ -504,16 +575,31 @@ export async function collectReferenceThumbnailsForWindow(
  */
 export type WinnerBasis = "ctr" | "views";
 
-function analysisInstructions(ownBasis: WinnerBasis): string {
+function analysisInstructions(ownBasis: WinnerBasis, loserCount: number): string {
   const ownClause =
     ownBasis === "ctr"
       ? `The OWN CHANNEL images are PROVEN to outperform their channel's median CLICK-THROUGH RATE — the share of people who clicked after being shown the cover. That is direct evidence about the image itself.
 The COMPETITOR images are ranked by views against their own channel's median, because click-through is private to a channel's owner. Treat a competitor trait as weaker evidence than the same trait on an own-channel image.`
       : `These thumbnails are PROVEN to outperform their channel's median VIEWS. Views are an indirect signal for a cover: they also reflect the topic and how the algorithm distributed the video. Do not claim an image "gets clicks" — say it appears on videos that outperformed.`;
 
-  return `You are analysing YouTube thumbnails that outperformed their channel. Your job is to identify the distinct visual FORMATS at work — not to praise them, not to invent a brand strategy.
+  const loserClause =
+    loserCount > 0
+      ? `
 
-${ownClause}
+THE CONTROL GROUP — this is what makes your answer worth reading.
+
+${loserCount} of these images are labelled UNDERPERFORMED. They are from the SAME channel and they did WORSE than its median. They are not examples to copy; they are the test for every claim you want to make.
+
+Before you state that a trait is why the winners won, look for it in the underperformers. If it is there too, it is the channel's HABIT, not its advantage — say so plainly and mark that rule "worth-testing", not "proven". Only a trait that is common in the winners and rare or absent in the underperformers may be called "proven".
+
+If the winners and the underperformers genuinely look the same, SAY THAT. "These covers are built the same way; the difference between the winners and the rest is the subject and the promise, not the design" is a correct and useful answer. Inventing a visual difference that is not there is the one failure that matters here, because every generated cover afterwards inherits it.`
+      : `
+
+There is no control group in this set — only winners. That limits you: you can describe what these covers DO, but you cannot know which of it is why they won. Mark every rule "worth-testing" unless a trait is so strong and so consistent that its absence would obviously break the channel's identity.`;
+
+  return `You are analysing YouTube thumbnails from one channel. Your job is to identify the distinct visual FORMATS at work and to write a short PLAYBOOK the channel's owner can act on — not to praise them, not to invent a brand strategy.
+
+${ownClause}${loserClause}
 
 Each image is labelled with its multiplier and with the metric that multiplier is measured in. Higher multiplier = stronger evidence.
 
@@ -534,9 +620,23 @@ Rules you must follow:
 - "label" is a short human name for the format, 2-5 words, describing the LOOK — e.g. "Face + shock reaction", "Wide landscape, huge text". Never a topic.
 - Write in plain English. This gets shown to the channel owner.
 
+THE PLAYBOOK — "channelRead" and "rules".
+
+"channelRead" is one short paragraph in plain English naming what this channel's cover system actually is, and what separates its winners from its underperformers. The owner reads this first to check you understood his channel at all; if you got it wrong he stops there instead of trusting the rules below. Write it for a person, not for a model.
+
+"rules" are 4-8 instructions the owner can follow on his next cover. Each one:
+- "rule": what to DO, in the imperative, specific enough to act on. "Keep the headline to 2-3 words on a black band across the top quarter" — not "use clear typography".
+- "evidence": where you saw it, naming the images. Say which winners have it and whether the underperformers have it too. This sentence is what makes the rule believable, so no vague "most thumbnails".
+- "strength": "proven" only when the winners have it and the underperformers largely do not. Otherwise "worth-testing". Be strict — a channel-identity habit shared by everything is never "proven".
+- "psychology": what this makes a viewer FEEL or expect in the half-second before they click — the promise, the curiosity gap, the threat, the number, the recognisable face. One sentence. This is the part the owner cannot get from looking at the pictures himself, so do not skip it and do not restate the visual.
+
 Return ONLY a JSON object, no prose and no code fence, in exactly this shape:
 
 {
+  "channelRead": string,
+  "rules": [
+    { "rule": string, "evidence": string, "strength": "proven"|"worth-testing", "psychology": string }
+  ],
   "formats": [
     {
       "label": string,
@@ -552,7 +652,9 @@ Return ONLY a JSON object, no prose and no code fence, in exactly this shape:
   "caveats": string[]
 }
 
-"dominant" is 2-4 hex colours. "textZone" is where the headline sits in most of them. "wordCountBand" is like "2-3" or "4-6". "avoid" is what these winners consistently do NOT do.
+"dominant" is 2-4 hex colours. "textZone" is where the headline sits in most of them. "wordCountBand" is like "2-3" or "4-6".
+
+"avoid" is the mistakes list, and it is the most useful thing you will write. Each entry is ONE sentence containing both the mistake and the proof, in this shape: "<what not to do> — as in <which underperformer>, where <what actually went wrong>". Take these from the UNDERPERFORMED images wherever you can; only fall back to "what the winners never do" when there is no control group. Never write a generic don't ("avoid clutter") — a sentence that would fit any channel on YouTube helps nobody.
 
 "plate" is true when the headline sits on a solid colour block or banner rather than directly on the picture; "plateColor" is that block's hex colour and "textColor" the letters' hex colour. Both null when there is no plate. Look carefully: a banner behind the words is one of the strongest things a channel repeats, and getting it wrong makes every generated cover look like a different channel.`;
 }
@@ -561,10 +663,17 @@ export async function analyseThumbnailStyle(input: {
   analyser: AnalysisProvider;
   own: ReferenceThumbnail[];
   competitor: ReferenceThumbnail[];
+  /**
+   * Same channel, below its own median. The control group: without it
+   * the model can only report the channel's habits back as its winning
+   * formula. Optional so older callers keep working.
+   */
+  ownLosers?: ReferenceThumbnail[];
   /** What the OWN winners were ranked on. Competitors are always views. */
   ownBasis?: WinnerBasis;
 }): Promise<{ profile: ThumbnailStyleProfile; model: string }> {
-  const all = [...input.own, ...input.competitor];
+  const losers = input.ownLosers ?? [];
+  const all = [...input.own, ...input.competitor, ...losers];
   if (all.length === 0) {
     throw new Error(
       "No thumbnails to analyse — sync this channel's videos first, and add competitors on the Competitors tab."
@@ -589,10 +698,17 @@ export async function analyseThumbnailStyle(input: {
     // the own-channel images are click-through multiples while the
     // competitor images are still view multiples, and a single blanket
     // sentence would misdescribe half the evidence.
-    const metric = ref.source === "own" && ownBasis === "ctr" ? "median CTR" : "median views";
+    const isOwn = ref.source === "own" || ref.source === "own_loser";
+    const metric = isOwn && ownBasis === "ctr" ? "median CTR" : "median views";
+    const who =
+      ref.source === "own"
+        ? "OWN CHANNEL — WINNER"
+        : ref.source === "own_loser"
+          ? "OWN CHANNEL — UNDERPERFORMED"
+          : `COMPETITOR: ${ref.sourceLabel}`;
     content.push({
       type: "text",
-      text: `[${ref.videoId}] ${ref.source === "own" ? "OWN CHANNEL" : `COMPETITOR: ${ref.sourceLabel}`} — ${ref.multiplier.toFixed(1)}x its channel ${metric} — "${ref.title}"`,
+      text: `[${ref.videoId}] ${who} — ${ref.multiplier.toFixed(2)}x its channel ${metric} — "${ref.title}"`,
     });
     content.push({
       type: "image",
@@ -603,7 +719,7 @@ export async function analyseThumbnailStyle(input: {
       },
     });
   }
-  content.push({ type: "text", text: analysisInstructions(ownBasis) });
+  content.push({ type: "text", text: analysisInstructions(ownBasis, losers.length) });
 
   const raw = await runTurn({
     analyser: input.analyser,
@@ -753,11 +869,50 @@ function normaliseTraits(raw: Record<string, unknown>): StyleTraits {
   };
 }
 
+/**
+ * The playbook half of the answer: instructions the owner can act on,
+ * each carrying its own proof and its own confidence.
+ *
+ * Kept separate from the trait tables because they answer different
+ * questions. Traits describe what the covers LOOK like and feed the
+ * image model; rules say what to DO next and are written for the person.
+ * The trait table was the whole product until a client said he could not
+ * tell what to change after reading it.
+ */
+function normaliseRules(raw: unknown): PlaybookRule[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PlaybookRule[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue;
+    const o = r as Record<string, unknown>;
+    const rule = typeof o.rule === "string" ? o.rule.trim() : "";
+    // A rule with no instruction in it is not a rule. Dropping it is
+    // better than rendering an empty bullet that reads as a UI bug.
+    if (!rule) continue;
+    out.push({
+      rule,
+      evidence: typeof o.evidence === "string" ? o.evidence.trim() : "",
+      // Anything the model didn't explicitly mark as proven is a
+      // hypothesis. Defaulting the other way would turn a parsing slip
+      // into a false claim of evidence, which is the one thing this
+      // whole feature exists to avoid.
+      strength: o.strength === "proven" ? "proven" : "worth-testing",
+      psychology: typeof o.psychology === "string" ? o.psychology.trim() : "",
+    });
+  }
+  return out.slice(0, MAX_RULES);
+}
+
 function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
   const avoid = Array.isArray(raw.avoid) ? (raw.avoid as unknown[]).map(String) : [];
   const caveats = Array.isArray(raw.caveats)
     ? (raw.caveats as unknown[]).map(String)
     : [];
+  const channelRead =
+    typeof raw.channelRead === "string" && raw.channelRead.trim()
+      ? (raw.channelRead as string).trim()
+      : null;
+  const rules = normaliseRules(raw.rules);
 
   const rawFormats = Array.isArray(raw.formats)
     ? (raw.formats as unknown[]).filter(
@@ -769,7 +924,7 @@ function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
   // old cached profile being re-normalised. Treat the object itself as
   // the single format rather than losing everything it did return.
   if (rawFormats.length === 0) {
-    return { ...normaliseTraits(raw), avoid, caveats };
+    return { ...normaliseTraits(raw), avoid, caveats, channelRead, rules };
   }
 
   const formats: StyleFormat[] = rawFormats
@@ -804,7 +959,7 @@ function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
   // Mirror the strongest format into the flat fields. Everything written
   // before formats existed — the generation prompt, the overlay
   // defaults, the panel — reads those and keeps working untouched.
-  return { ...formats[0], formats, avoid, caveats };
+  return { ...formats[0], formats, avoid, caveats, channelRead, rules };
 }
 
 /* ------------------------------------------------------------------ *
@@ -828,6 +983,28 @@ export type GenerationPlan = {
  * Out-of-range or missing index falls back to the strongest format,
  * which is also exactly what a pre-formats profile yields.
  */
+/**
+ * Reads the owner's note as a list of panels when it is one.
+ *
+ * Deliberately forgiving about the marker — people type "1.", "1)",
+ * "-", "•" or nothing at all — and deliberately strict about the count:
+ * two lines are a sentence that happened to wrap, not a list. Returns an
+ * empty array for ordinary prose, which leaves the note being passed
+ * through as a plain remark exactly as before.
+ */
+export function parseListItems(note: string | null | undefined): string[] {
+  if (!note) return [];
+  const lines = note
+    .split(/\r?\n|(?<=[^\d])\s(?=\d{1,2}[.)]\s)/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => l.replace(/^\s*(?:\d{1,2}[.)]|[-*•])\s*/, "").trim())
+    .filter(Boolean);
+  // Every line being one word is a shopping list of adjectives, not
+  // panels; fewer than three is not a list at all.
+  return lines.length >= 3 ? lines : [];
+}
+
 export function profileForFormat(
   profile: ThumbnailStyleProfile,
   formatIndex?: number | null
@@ -848,9 +1025,12 @@ export function profileForFormat(
       subject: chosen.subject,
       textTreatment: chosen.textTreatment,
       mood: chosen.mood,
-      // Avoid/caveats are channel-wide, not per-format — they still apply.
+      // Avoid/caveats/playbook are channel-wide, not per-format — they
+      // still apply whichever look is being built.
       avoid: profile.avoid,
       caveats: profile.caveats,
+      channelRead: profile.channelRead ?? null,
+      rules: profile.rules ?? [],
       formats: undefined,
     },
     label: chosen.label,
@@ -937,6 +1117,53 @@ export async function buildGenerationPlan(input: {
     ? `IMPORTANT OVERRIDE: this channel's language cannot be rendered by our text compositor, so the image model MUST draw the headline itself, spelled exactly as given. Include the exact headline text in the prompt, in quotes, and describe its treatment (${profile.textTreatment.uppercase ? "uppercase" : "sentence case"}, heavy weight, high contrast).`
     : "The image must contain no text at all.";
 
+  // The playbook, spelled out rather than left inside the JSON dump
+  // below. The rules are the part written for a human, and burying them
+  // in a serialised object next to hex codes is how they get skimmed.
+  // Proven and worth-testing are stated differently on purpose: a
+  // hypothesis presented as a requirement is how a coincidence becomes
+  // every cover this channel makes from now on.
+  const proven = (profile.rules ?? []).filter((r) => r.strength === "proven");
+  const testing = (profile.rules ?? []).filter((r) => r.strength !== "proven");
+  const playbookLine = (profile.rules ?? []).length
+    ? `CHANNEL PLAYBOOK — what this channel's covers must do${
+        profile.channelRead ? `\n\nHow this channel reads: ${profile.channelRead}` : ""
+      }${
+        proven.length
+          ? `\n\nFOLLOW THESE — they held up against the channel's own underperformers:\n${proven
+              .map((r) => `- ${r.rule}${r.psychology ? ` (it works by: ${r.psychology})` : ""}`)
+              .join("\n")}`
+          : ""
+      }${
+        testing.length
+          ? `\n\nPREFER THESE, but they are unproven — never break a rule above to satisfy one of these:\n${testing
+              .map((r) => `- ${r.rule}`)
+              .join("\n")}`
+          : ""
+      }${
+        profile.avoid.length
+          ? `\n\nDO NOT DO THESE — each one is a mistake this channel has already made:\n${profile.avoid
+              .map((a) => `- ${a}`)
+              .join("\n")}`
+          : ""
+      }`
+    : "";
+
+  // A listicle cover lives or dies on whether its tiles show ten
+  // different things. Left as one free-form sentence the note reads as
+  // flavour and the model draws ten variations of the same object —
+  // which is exactly what clients report as "it generates rubbish".
+  // Recognised as a list, it becomes the layout brief.
+  const listItems = parseListItems(input.userNote);
+  const noteLine = !input.userNote
+    ? ""
+    : listItems.length >= 3
+      ? `\nTHIS IS A LIST COVER. The owner has said what each panel must show, in this order — ${listItems.length} items:
+${listItems.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+Build a layout that holds exactly ${listItems.length} panels, one per item, in this order. Every panel must be recognisable at thumbnail size on a phone: do not merge two items into one illustration, do not repeat the same subject across panels, and do not invent an extra one. If the channel's format labels each panel, label them from these items.`
+      : `\nThe channel owner adds: ${input.userNote}`;
+
   const languageLine = input.channelTitles?.length
     ? `THIS CHANNEL'S OWN RECENT TITLES (these show the language to write the headline in):\n${input.channelTitles
         .map((t) => `- ${t}`)
@@ -958,9 +1185,11 @@ CHANNEL STYLE PROFILE (derived from thumbnails that beat this channel's median)$
     }:
 ${JSON.stringify(profile, null, 2)}
 
+${playbookLine}
+
 ${brandLine}
 ${textLine}
-${input.userNote ? `\nThe channel owner adds: ${input.userNote}` : ""}
+${noteLine}
 
 ${PROMPT_INSTRUCTIONS}
 

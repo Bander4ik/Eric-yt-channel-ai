@@ -5,6 +5,7 @@ import {
   getThumbnailStyleProfile,
   getThumbnailStyleWindowSetting,
   ownWinnerBasis,
+  listOwnThumbnailLosers,
   saveThumbnailStyleProfile,
   setThumbnailStyleWindowMonths,
 } from "@/lib/db";
@@ -13,6 +14,7 @@ import {
   analyseThumbnailStyle,
   resolveAnalysisProvider,
   collectReferenceThumbnailsForWindow,
+  MAX_OWN_LOSER_REFS,
   selectThumbnailWindow,
   DEFAULT_STYLE_WINDOW_MONTHS,
   MIN_WINNERS,
@@ -278,16 +280,30 @@ export async function POST(req: Request) {
   // the tab stays open.
   void (async () => {
     try {
+      // The control group travels on the SAME window as the winners.
+      // Comparing this year's winners against covers from two rebrands
+      // ago would manufacture differences that are about time, not about
+      // what works.
+      const ownLosers = listOwnThumbnailLosers(
+        channelId,
+        MAX_OWN_LOSER_REFS,
+        selection.windowMonths
+      );
+
       const refs = await collectReferenceThumbnailsForWindow(
         channelId,
-        { own: selection.own, competitor: selection.competitor },
+        { own: selection.own, competitor: selection.competitor, ownLosers },
         (done, jobTotal) => {
           progressJob(key, { done, total: jobTotal, stage: "collecting reference thumbnails" });
         }
       );
 
       progressJob(key, {
-        stage: `analysing ${refs.own.length + refs.competitor.length} thumbnails`,
+        stage: `analysing ${refs.own.length + refs.competitor.length} thumbnails${
+          refs.ownLosers.length
+            ? ` against ${refs.ownLosers.length} that underperformed`
+            : ""
+        }`,
       });
 
       // A dry run against a seeded database has no real thumbnails to
@@ -309,6 +325,7 @@ export async function POST(req: Request) {
             analyser,
             own: refs.own,
             competitor: refs.competitor,
+            ownLosers: refs.ownLosers,
             ownBasis,
           });
 

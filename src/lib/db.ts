@@ -6741,11 +6741,23 @@ export function listRecentChannelTitles(channelId: string, limit = 6): string[] 
  * a channel's old look together with a rebrand -- a three-year-old
  * thumbnail no longer gets an equal vote against last month's.
  */
-export function listOwnThumbnailWinners(
+/**
+ * Every mature own-channel thumbnail, scored against its channel's own
+ * median, best and worst alike.
+ *
+ * Winners and losers come from ONE ranking on purpose. A style analysis
+ * that sees only the covers that worked cannot tell a channel-identity
+ * habit ("we always put a black bar on top" — the losers do it too) from
+ * a real winning move; that difference is the whole point of showing the
+ * model both. Splitting this into two near-identical queries is how the
+ * two halves would silently drift apart — different maturity cutoffs,
+ * different Shorts handling, different metric — and then "best vs worst"
+ * would be comparing two different populations.
+ */
+function rankOwnThumbnails(
   channelId: string,
-  limit = 12,
-  windowMonths: number | null = null
-): ThumbnailWinner[] {
+  windowMonths: number | null
+): { ranked: ThumbnailWinner[]; basis: "ctr" | "views" } {
   const windowFloor = thumbWindowFloor(windowMonths);
   const rows = db
     .prepare(
@@ -6808,23 +6820,59 @@ export function listOwnThumbnailWinners(
     );
     const medianCtr = medianOf(measured.map((s) => s.ctr ?? 0).filter((v) => v > 0));
     if (medianCtr > 0) {
-      return measured
-        .map((s) => ({ ...s, multiplier: (s.ctr ?? 0) / medianCtr }))
-        .filter((w) => w.multiplier > 1)
-        .sort((a, b) => b.multiplier - a.multiplier)
-        .slice(0, limit);
+      return {
+        basis: "ctr",
+        ranked: measured.map((s) => ({ ...s, multiplier: (s.ctr ?? 0) / medianCtr })),
+      };
     }
     // Median of zero means every measured video has 0% CTR, which is not
     // a real state -- fall through to views rather than return nothing.
   }
 
   const median = medianOf(rows.map((r) => r.views ?? 0).filter((v) => v > 0));
-  if (median <= 0) return [];
+  if (median <= 0) return { ranked: [], basis: "views" };
 
-  return scored
-    .map((s) => ({ ...s, multiplier: s.views / median }))
-    .filter((w) => w.multiplier > 1)
+  return {
+    basis: "views",
+    ranked: scored.map((s) => ({ ...s, multiplier: s.views / median })),
+  };
+}
+
+export function listOwnThumbnailWinners(
+  channelId: string,
+  limit = 12,
+  windowMonths: number | null = null
+): ThumbnailWinner[] {
+  return rankOwnThumbnails(channelId, windowMonths)
+    .ranked.filter((w) => w.multiplier > 1)
     .sort((a, b) => b.multiplier - a.multiplier)
+    .slice(0, limit);
+}
+
+/**
+ * The same channel's WORST mature thumbnails, weakest first.
+ *
+ * These are not shown to the user as a wall of shame — they go to the
+ * style analysis as the control group. Without them a model reads ten
+ * winners and reports the channel's habits back as the reason it wins;
+ * with them it can only claim a trait matters if the failures do not
+ * share it. A client who runs this on his own channels put it exactly
+ * that way: the honest answer he got was "your winners and losers look
+ * the same, the difference is the topic" — and that answer is impossible
+ * to reach from winners alone.
+ *
+ * Default of 4 mirrors what that client's build sends (4 best, 4 worst):
+ * enough to see a pattern, few enough that one bad month cannot become
+ * "what this channel does wrong".
+ */
+export function listOwnThumbnailLosers(
+  channelId: string,
+  limit = 4,
+  windowMonths: number | null = null
+): ThumbnailWinner[] {
+  return rankOwnThumbnails(channelId, windowMonths)
+    .ranked.filter((w) => w.multiplier < 1)
+    .sort((a, b) => a.multiplier - b.multiplier)
     .slice(0, limit);
 }
 

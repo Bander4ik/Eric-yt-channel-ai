@@ -77,9 +77,21 @@ type StyleFormat = StyleTraitSet & {
   lowConfidence: boolean;
 };
 
+/** One instruction from the channel playbook — see thumbnail-style.ts. */
+type PlaybookRule = {
+  rule: string;
+  evidence: string;
+  strength: "proven" | "worth-testing";
+  psychology: string;
+};
+
 type StyleProfile = StyleTraitSet & {
   /** Absent on profiles analysed before formats existed — those are one look. */
   formats?: StyleFormat[];
+  /** Null/absent on profiles built before the playbook existed. */
+  channelRead?: string | null;
+  /** Empty on profiles built before the playbook existed. */
+  rules?: PlaybookRule[];
   avoid: string[];
   caveats: string[];
 };
@@ -710,9 +722,13 @@ export function ThumbnailsTab() {
                 <Textarea
                   value={note}
                   rows={2}
-                  placeholder="Optional: anything the generator should know (a specific subject, a colour to avoid…)"
+                  placeholder="Optional. For a list video, write what each panel shows, in order — e.g. 1. giant elongated skull  2. sealed archive drawer  3. glass-case figure"
                   onChange={(e) => setNote(e.target.value)}
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Three or more numbered items are read as the panels of a
+                  list cover.
+                </p>
               </>
             )}
 
@@ -1393,12 +1409,21 @@ function BasisPanel({
         )}
 
         {profile && (
-          <ProfileSummary
-            profile={profile}
-            formatIndex={formatIndex}
-            onSelectFormat={onSelectFormat}
-            minWinners={available.minWinners}
-          />
+          <>
+            <ChannelPlaybook profile={profile} />
+            <div className="border-t border-border pt-3">
+              <p className="text-sm font-semibold">Style details</p>
+              <p className="text-xs text-muted-foreground">
+                The visual grammar the image model follows.
+              </p>
+            </div>
+            <ProfileSummary
+              profile={profile}
+              formatIndex={formatIndex}
+              onSelectFormat={onSelectFormat}
+              minWinners={available.minWinners}
+            />
+          </>
         )}
       </CardContent>
     </Card>
@@ -1460,6 +1485,93 @@ function WinnerStrip({ winners }: { winners: Winner[] }) {
           </div>
         </a>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The channel playbook — what the model read off this channel's own
+ * winners and underperformers, shown above the trait tables because it
+ * is the "did it understand my channel" check: if channelRead is wrong,
+ * nothing built on top of it is worth trusting either.
+ *
+ * Profiles saved before the playbook existed carry no rules at all, and
+ * that case renders as a single line, not an empty heading over nothing.
+ */
+function ChannelPlaybook({ profile }: { profile: StyleProfile }) {
+  const rules = profile.rules ?? [];
+
+  // The mistakes list belongs to the playbook and is rendered here for
+  // BOTH cases — with rules and without. It used to also appear inside
+  // the trait table as a "Never" row; that row is gone, so this block
+  // has to survive the no-rules path or an old profile would quietly
+  // lose its avoid list on upgrade.
+  const avoidBlock =
+    profile.avoid.length > 0 ? (
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">Avoid</p>
+        {profile.avoid.map((a, i) => (
+          <p key={i} className="flex gap-2 text-xs text-muted-foreground">
+            <span className="shrink-0">×</span>
+            <span>{a}</span>
+          </p>
+        ))}
+      </div>
+    ) : null;
+
+  if (rules.length === 0) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          This profile was built before the playbook existed — run the
+          analysis again to get it.
+        </p>
+        {avoidBlock}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 text-sm">
+      <div>
+        <p className="font-semibold">Channel playbook</p>
+        <p className="text-xs text-muted-foreground">
+          What the model learned from your best and worst thumbnails. Fed
+          into every generation above.
+        </p>
+      </div>
+
+      {profile.channelRead && <p>{profile.channelRead}</p>}
+
+      <ul className="space-y-2">
+        {rules.map((r, i) => (
+          <li key={i} className="flex gap-2">
+            <span
+              className={cn(
+                "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                r.strength === "proven" ? "bg-emerald-500" : "bg-amber-500"
+              )}
+            />
+            <div>
+              <p>{r.rule}</p>
+              <p className="text-[11px] text-muted-foreground">{r.evidence}</p>
+              {r.psychology && (
+                <p className="text-[11px] text-muted-foreground">
+                  Why it works: {r.psychology}
+                </p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <p className="text-xs text-muted-foreground">
+        Green: held up against this channel&apos;s own underperformers.
+        Amber: worth testing — the channel&apos;s weaker thumbnails do it
+        too.
+      </p>
+
+      {avoidBlock}
     </div>
   );
 }
@@ -1546,14 +1658,10 @@ function ProfileSummary({
           </div>
         ) : null
       )}
-      {profile.avoid.length > 0 && (
-        <div className="flex gap-2">
-          <span className="w-24 shrink-0 text-xs font-medium text-muted-foreground">
-            Never
-          </span>
-          <span>{profile.avoid.join("; ")}</span>
-        </div>
-      )}
+      {/* The "Never" row lived here until the playbook took the mistakes
+          list over. Two copies of the same sentences on one screen is
+          the clutter this rebuild is removing, and the playbook version
+          carries the proof with each entry. */}
       {profile.caveats.length > 0 && (
         <div className="mt-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
           <b>Worth testing, not proven:</b> {profile.caveats.join(" · ")}
