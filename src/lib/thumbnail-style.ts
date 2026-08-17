@@ -806,13 +806,83 @@ async function runTurn(opts: {
  * The model returns JSON, but a stray code fence or a leading sentence
  * shouldn't cost the user a paid call. Take the outermost braces.
  */
+/**
+ * Escapes double quotes that ended up INSIDE a JSON string value.
+ *
+ * Walks the text rather than pattern-matching it, because the difference
+ * between a quote that closes a string and one that belongs to the prose
+ * is what comes next: a structural character means the string ended,
+ * anything else means the model was quoting something. A regex cannot
+ * see that reliably — the first attempt at one silently failed on a
+ * quote preceded by a space, which is the common case.
+ *
+ * Only fixes this one class. A raw newline inside a string still throws,
+ * and should: repairing everything is how a parser starts inventing
+ * content.
+ */
+function escapeStrayQuotes(json: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (ch === "\\") {
+      out += ch + (json[i + 1] ?? "");
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      if (!inString) {
+        inString = true;
+        out += ch;
+        continue;
+      }
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json[j])) j++;
+      const next = json[j];
+      if (next === "," || next === ":" || next === "}" || next === "]" || next === undefined) {
+        inString = false;
+        out += ch;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 function parseJsonObject(raw: string): Record<string, unknown> {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) {
     throw new Error("The style analysis did not return JSON.");
   }
-  return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
+  const body = raw.slice(start, end + 1);
+  try {
+    return JSON.parse(body) as Record<string, unknown>;
+  } catch (err) {
+    // One repair attempt, then give up honestly.
+    //
+    // A model writing a paragraph into a JSON string will now and then
+    // leave a bare double quote inside it — ours did, the moment it was
+    // asked to include a sentence verbatim. The whole run then dies on a
+    // parse error AFTER the analysis was paid for, which is the worst
+    // possible place to fail. The instruction that caused it is gone,
+    // but the class of accident is not, so the parser repairs the only
+    // form of it that is safe to repair: a quote inside a string value,
+    // which is any quote not followed by a structural character.
+    const repaired = escapeStrayQuotes(body);
+    try {
+      const parsed = JSON.parse(repaired) as Record<string, unknown>;
+      log.warn("thumbnails", "Model returned slightly broken JSON, repaired", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return parsed;
+    } catch {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -1100,7 +1170,14 @@ export function orderByWordBand(candidates: string[], band: string): string[] {
   if (!Number.isFinite(low) || !Number.isFinite(high) || high < low) {
     return candidates;
   }
-  const words = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
+  // Punctuation standing alone is not a word. "BUMPY SMILED — THEN HE
+  // LOST AN EYE" counted as eight against a 2-5 band and lost to nothing,
+  // because every candidate was "too long" once the dash was a word.
+  const words = (t: string) =>
+    t
+      .trim()
+      .split(/\s+/)
+      .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
   const fits = candidates.filter((c) => {
     const n = words(c);
     return n >= low && n <= high;
@@ -1162,7 +1239,7 @@ function promptInstructions(modelRendersText: boolean): string {
     : "You write prompts for an image generation model that will produce a YouTube thumbnail BACKGROUND, plus the short headline that will be composited on top of it afterwards.";
   const textRule = modelRendersText
     ? `- The image MUST carry the headline, lettered as described above and spelled exactly. Put it in the prompt in quotes so the model cannot paraphrase it.
-- Then close the prompt with this sentence, verbatim: "The only text anywhere in the image is that headline — no captions, no labels, no numbers, no aspect-ratio marks, no platform or channel logo, no watermark, no user-interface elements of any kind." An image model that is allowed to letter one thing will letter several unless it is told what NOT to write, and words that appear anywhere in your prompt are exactly what it reaches for: it has painted "16:9" into a corner and stamped a YouTube logo on a cover, both lifted straight out of instructions meant for you, not for the picture.
+- Then close the prompt with a sentence stating that the headline is the only text anywhere in the image: no captions, no labels, no numbers, no aspect-ratio marks, no platform or channel logo, no watermark, no interface elements. Write it in your own words — do NOT wrap it in quotation marks, because the only quoted text in your answer must be the headline itself. An image model that is allowed to letter one thing will letter several unless it is told what NOT to write, and words that appear anywhere in your prompt are exactly what it reaches for: it has painted "16:9" into a corner and stamped a YouTube logo on a cover, both lifted straight out of instructions meant for you, not for the picture.
 - For the same reason, never put the words "YouTube", "thumbnail", "16:9" or "9:16" inside the "prompt" field. Describe the frame as landscape or vertical instead.`
     : "- The image must contain NO TEXT, NO LETTERING, NO WATERMARKS and no logos. The headline is added later by a separate renderer. State this in the prompt.";
   const zoneRule = modelRendersText
