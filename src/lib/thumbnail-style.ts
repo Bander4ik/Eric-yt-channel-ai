@@ -1005,6 +1005,29 @@ export function parseListItems(note: string | null | undefined): string[] {
   return lines.length >= 3 ? lines : [];
 }
 
+/**
+ * Does this channel put a headline on its covers at all?
+ *
+ * Some of the best-performing channels put none: a comic-strip channel
+ * whose covers are pure illustration was measured at a word band of
+ * "0-1" with the note "minimal to no text overlay" — and the generator
+ * lettered a headline across it anyway, because a headline was
+ * hard-wired into the pipeline. The cover stopped looking like the
+ * channel the moment we added the one thing the channel never does.
+ *
+ * Read off the measured word-count band rather than a new field, so
+ * every profile already saved answers this too. A band whose lower bound
+ * is zero means the winners routinely carry no words.
+ */
+export function channelUsesHeadline(profile: ThumbnailStyleProfile): boolean {
+  const band = profile.textTreatment.wordCountBand?.trim() ?? "";
+  const low = Number.parseInt(band, 10);
+  if (Number.isFinite(low) && low <= 0) return false;
+  // No band at all is the older shape; assume a headline, which is what
+  // those profiles were generated under.
+  return true;
+}
+
 export function profileForFormat(
   profile: ThumbnailStyleProfile,
   formatIndex?: number | null
@@ -1070,7 +1093,8 @@ Critical constraints:
 ${textRule}
 ${zoneRule}
 - Write the headline candidates in the channel's own language, shown by the sample titles you are given. The subject matter is irrelevant to this: a video about Norway on an English channel still gets an English headline. Never translate the channel's language into another one.
-- If the profile names a recurring non-text graphic element (an arrow, a frame, a marker), include it in the prompt. It is not text and it is part of why these covers work.
+- If the profile names a RECURRING ELEMENT, it is the one thing you must tell the model to reproduce rather than merely derive — it is the exception to "do not copy the references". A mascot, a blank-faced everyman, a coloured arrow, a frame, a badge: this is the channel's signature, and a cover without it is a cover from a different channel. Say in the prompt what it looks like and that it must appear exactly that way.
+- When that recurring element is a way of DRAWING CHARACTERS (a mask, a blank face, a stick figure, a specific art style for people), it applies to EVERY character in the frame, not just the main one. Getting this wrong is what produces a cover with the channel's own mascot next to a stranger drawn in some other style, which reads as two different channels in one picture.
 
 Return ONLY a JSON object, no prose and no code fence:
 

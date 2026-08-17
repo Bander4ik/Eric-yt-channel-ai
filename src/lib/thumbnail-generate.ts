@@ -15,6 +15,7 @@ import {
 } from "./db";
 import {
   buildGenerationPlan,
+  channelUsesHeadline,
   collectReferenceThumbnails,
   safeSegment,
   type AnalysisProvider,
@@ -92,7 +93,7 @@ export type RunGenerationInput = {
    *
    * A script our font cannot render forces "model" whatever is asked.
    */
-  headlineMode?: "model" | "overlay" | null;
+  headlineMode?: "model" | "overlay" | "none" | null;
   onProgress?: (p: {
     stage: string;
     done: number;
@@ -198,8 +199,18 @@ export async function runGeneration(
   // for every channel at once. Either way the compositor stands down,
   // because drawing on top of a headline the model already wrote gives
   // you two.
+  // A channel whose winners carry no words gets none. The measurement
+  // already knew this — the word band comes back as "0-1" with a note
+  // like "minimal to no text overlay" — and we lettered a headline over
+  // it anyway, which is the fastest way to make a cover stop looking
+  // like the channel it was built from. An explicit choice still wins;
+  // this is only what happens when nobody asked for anything.
+  const mode: "model" | "overlay" | "none" =
+    input.headlineMode ?? (channelUsesHeadline(profile) ? "model" : "none");
+  const wantsHeadline = mode !== "none";
   const modelRendersText =
-    !fontCovers(provisionalHeadline, fontAbs) || input.headlineMode === "model";
+    wantsHeadline &&
+    (!fontCovers(provisionalHeadline, fontAbs) || mode === "model");
 
   report({ stage: "writing the prompt", done: 0, failed: 0 });
 
@@ -305,7 +316,7 @@ export async function runGeneration(
       let finalRel: string;
       let overlayJson: string | null = null;
       let warning: string | null = null;
-      if (modelRendersText) {
+      if (modelRendersText || !wantsHeadline) {
         // The model drew the headline itself — compositing on top would
         // double the text.
         finalRel = baseRel;

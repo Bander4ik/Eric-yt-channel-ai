@@ -312,10 +312,10 @@ export function ThumbnailsTab() {
   // default source follows whether the board is actually on, and the
   // option itself disappears when it is not.
   const [boardVisible] = useUiPref("showIdeasBoard");
-  const [batchSource, setBatchSource] = useState<"ideas" | "signals">("signals");
+  const [batchSource, setBatchSource] = useState<"ideas" | "signals" | "own">("own");
   useEffect(() => {
-    if (!boardVisible) setBatchSource("signals");
-  }, [boardVisible]);
+    if (!boardVisible && batchSource === "ideas") setBatchSource("own");
+  }, [boardVisible, batchSource]);
   const [batchCount, setBatchCount] = useState(3);
   const [genJob, setGenJob] = useState<Job | null>(null);
   const [run, setRun] = useState<
@@ -986,8 +986,8 @@ function BatchControls({
   disabled,
   running,
 }: {
-  source: "ideas" | "signals";
-  setSource: (s: "ideas" | "signals") => void;
+  source: "ideas" | "signals" | "own";
+  setSource: (s: "ideas" | "signals" | "own") => void;
   boardVisible: boolean;
   count: number;
   setCount: (n: number) => void;
@@ -1001,7 +1001,9 @@ function BatchControls({
     <div className="space-y-2 rounded-md border border-border p-3">
       <p className="text-xs text-muted-foreground">
         The app picks what to work on:{" "}
-        {source === "ideas"
+        {source === "own"
+          ? "your own videos that beat this channel's median — same subjects, stronger covers"
+          : source === "ideas"
           ? "the titles saved longest ago on the Ideas board"
           : "the hottest Niche Watch hits by views per hour, as your own take on the subject"}
         .
@@ -1009,9 +1011,10 @@ function BatchControls({
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={source}
-          onChange={(e) => setSource(e.target.value as "ideas" | "signals")}
+          onChange={(e) => setSource(e.target.value as "ideas" | "signals" | "own")}
           className="rounded-md border border-border bg-background px-2 py-1 text-sm"
         >
+          <option value="own">From your own videos</option>
           {boardVisible && <option value="ideas">From the Board</option>}
           <option value="signals">From Signals</option>
         </select>

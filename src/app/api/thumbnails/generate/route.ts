@@ -200,17 +200,19 @@ export async function POST(req: Request) {
         overlayText:
           typeof body.overlayText === "string" ? body.overlayText : null,
         zone: body.zone !== undefined ? coerceZone(body.zone) : null,
-        // Default: the model letters it. Our own font is one look for
-        // every channel on the platform, and looking like the channel is
-        // the whole job. "overlay" asks for our compositor instead, and
-        // is the right choice when the headline must be edited later
-        // without paying for another image.
+        // Left null unless the caller actually chose, so the decision
+        // falls to what was measured on the channel: the model letters it
+        // in the channel's own hand, our compositor draws it when the
+        // user wants free edits, and a channel whose winners carry no
+        // words gets no headline at all.
         headlineMode:
           body.headlineMode === "overlay"
             ? "overlay"
             : body.headlineMode === "model"
               ? "model"
-              : "model",
+              : body.headlineMode === "none"
+                ? "none"
+                : null,
         onProgress: (p) =>
           progressJob(key, {
             stage: p.stage,

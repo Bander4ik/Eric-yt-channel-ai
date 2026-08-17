@@ -3,6 +3,7 @@ import {
   getActiveChannelId,
   listIdeas,
   listNicheHits,
+  listOwnThumbnailWinners,
 } from "@/lib/db";
 import { runGeneration } from "@/lib/thumbnail-generate";
 import { preflight } from "@/lib/thumbnail-preflight";
@@ -72,7 +73,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: pre.error }, { status: pre.status });
   }
 
-  const source = body.source === "signals" ? "signals" : "ideas";
+  const source =
+    body.source === "signals"
+      ? "signals"
+      : body.source === "ideas"
+        ? "ideas"
+        : "own";
   const count = clampInt(body.count, DEFAULT_TITLES, 1, MAX_TITLES);
   const variants = clampInt(
     body.variants,
@@ -82,18 +88,20 @@ export async function POST(req: Request) {
   );
 
   const aspect = coerceAspect(body.aspect);
-  const seeds = collectSeeds(source, count);
+  const seeds = collectSeeds(source, count, channelId);
   if (seeds.length === 0) {
     return NextResponse.json(
       {
         error:
-          source === "ideas"
-            ? // The board is hidden for most people now, so an error that
-              // only says "go add cards to the Board" sends them looking
-              // for a tab that is not in their app. Name the way out that
-              // always exists first.
-              "Nothing saved to build from. Switch this to Signals, or type a title above and generate one cover — the Ideas board this reads from is turned off unless you enable it in Settings."
-            : "No niche hits to work from — run a Niche Watch scan on the Signals tab first.",
+          source === "own"
+            ? "This channel has no videos old enough to learn from yet — sync it on the Videos tab, or type a title above and generate one cover."
+            : source === "ideas"
+              ? // The board is hidden for most people now, so an error
+                // that only says "go add cards to the Board" sends them
+                // looking for a tab that is not in their app. Name a way
+                // out that always exists.
+                "Nothing saved to build from. Switch this to your own videos, or type a title above — the Ideas board this reads from is off unless you enable it in Settings."
+              : "No niche hits to work from — add a niche on the Signals tab and scan, or switch this to your own videos.",
       },
       { status: 400 }
     );
@@ -130,7 +138,12 @@ export async function POST(req: Request) {
           providerRow: pre.providerRow,
           profile: pre.profile,
           title: seed.title,
-          sourceKind: source === "ideas" ? "idea" : "signal",
+          sourceKind:
+            source === "ideas"
+              ? "idea"
+              : source === "own"
+                ? "video_remix"
+                : "signal",
           sourceId: seed.sourceId,
           userNote: seed.why,
           variants,
@@ -191,7 +204,29 @@ export async function POST(req: Request) {
  * "just make me something" click should unblock. Signals come hottest
  * first by views-per-hour.
  */
-function collectSeeds(source: "ideas" | "signals", count: number): Seed[] {
+/**
+ * A freshly connected channel has no ideas, no niches and no
+ * competitors — nothing anyone typed yet — so both original sources came
+ * back empty and the one no-input path in the generator dead-ended.
+ * Its own published videos always exist the moment a sync finishes, and
+ * regenerating covers for the titles that already earned views is both
+ * zero setup and the fastest honest look at what this tool does.
+ */
+function collectSeeds(
+  source: "ideas" | "signals" | "own",
+  count: number,
+  channelId: string
+): Seed[] {
+  if (source === "own") {
+    return listOwnThumbnailWinners(channelId, count)
+      .slice(0, count)
+      .map((w) => ({
+        title: w.title,
+        sourceId: w.videoId,
+        why: `A new cover for this channel's own video, which pulled ${w.multiplier.toFixed(1)}x its median. Keep the subject; the job is a stronger cover for the same video, not a different video.`,
+      }));
+  }
+
   if (source === "ideas") {
     return listIdeas()
       .filter((i) => i.stage === "idea")
