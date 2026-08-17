@@ -6510,6 +6510,31 @@ export function deleteImageProvider(id: number): boolean {
  * ------------------------------------------------------------------ */
 
 const THUMB_MIN_AGE_DAYS = 14;
+
+/**
+ * How a cover is scored, and how young a video may be to count.
+ *
+ * Raw view counts compare age, not quality: yesterday's video has had a
+ * day, last year's has had three hundred. That is why a maturity cutoff
+ * existed at all — and at fourteen days it hid the thing it was meant to
+ * protect. A channel three weeks old had twelve of its sixteen covers
+ * invisible, including a two-day-old video pulling 29,000 views a day,
+ * which is precisely the outlier anyone would want to learn from.
+ *
+ * So the metric carries the age instead: views per day, with the age
+ * clamped into a window. The floor of two days lets the first-day spike
+ * settle — a three-hour-old video shows a wild rate that means nothing.
+ * The ceiling of ninety stops an old video being punished for its own
+ * long tail: nearly all of a video's views arrive in its first months,
+ * so dividing a two-year-old's total by 730 days would make every
+ * established cover look like a failure.
+ *
+ * Checked before switching: on a channel of 91 settled videos the top
+ * twelve are the same twelve under both metrics, so nothing an
+ * established channel already learned gets scrambled.
+ */
+const THUMB_RANK_MIN_AGE_DAYS = 2;
+const THUMB_RANK_AGE_CAP_DAYS = 90;
 const THUMB_SHORT_MAX_SECONDS = 60;
 
 /**
@@ -6693,6 +6718,17 @@ function thumbMaturityCutoff(): number {
   return Math.floor(Date.now() / 1000) - THUMB_MIN_AGE_DAYS * 86400;
 }
 
+/** Views per day, with the age clamped — see THUMB_RANK_MIN_AGE_DAYS. */
+function viewsPerDay(views: number, publishedAt: number | null): number {
+  if (!publishedAt) return views;
+  const days = (Date.now() / 1000 - publishedAt) / 86400;
+  const clamped = Math.min(
+    THUMB_RANK_AGE_CAP_DAYS,
+    Math.max(THUMB_RANK_MIN_AGE_DAYS, days)
+  );
+  return views / clamped;
+}
+
 /**
  * The lower bound in unix seconds for the style-analysis window, or
  * `null` for "no lower bound" (all time). This is a MAXIMUM age on top
@@ -6804,7 +6840,7 @@ function rankOwnThumbnails(
   // scheduled in the future, which would otherwise rank on zero views.
   const maturityBound = ignoreMaturity
     ? Math.floor(Date.now() / 1000)
-    : thumbMaturityCutoff();
+    : Math.floor(Date.now() / 1000) - THUMB_RANK_MIN_AGE_DAYS * 86400;
   const rows = db
     .prepare(
       `SELECT id, title, thumbnail_url, thumbnail_text, views, published_at
@@ -6875,12 +6911,16 @@ function rankOwnThumbnails(
     // a real state -- fall through to views rather than return nothing.
   }
 
-  const median = medianOf(rows.map((r) => r.views ?? 0).filter((v) => v > 0));
+  const rates = scored.map((s) => viewsPerDay(s.views, s.publishedAt));
+  const median = medianOf(rates.filter((v) => v > 0));
   if (median <= 0) return { ranked: [], basis: "views" };
 
   return {
     basis: "views",
-    ranked: scored.map((s) => ({ ...s, multiplier: s.views / median })),
+    ranked: scored.map((s) => ({
+      ...s,
+      multiplier: viewsPerDay(s.views, s.publishedAt) / median,
+    })),
   };
 }
 

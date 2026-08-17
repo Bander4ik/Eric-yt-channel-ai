@@ -878,6 +878,9 @@ export function ThumbnailsTab() {
  * it is the only place the user can see spend accumulating and drop runs
  * they don't want, so it is never hidden behind a setting.
  */
+const HISTORY_PAGE_SIZE = 20;
+const HISTORY_LIMIT_CAP = 50;
+
 function HistoryPanel({
   channelId,
   reloadKey,
@@ -894,41 +897,92 @@ function HistoryPanel({
   const [spend, setSpend] = useState<Spend | null>(null);
   const [retention, setRetentionState] = useState<Retention | null>(null);
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  // How many runs we've asked the server for. Grown by "Show more" rather
+  // than paginated, since a run's own expanded covers are the thing worth
+  // scrolling to, not the list of runs itself.
+  const [limit, setLimit] = useState(HISTORY_PAGE_SIZE);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  const load = useCallback(async () => {
-    if (!channelId) return;
-    const r = await fetch(
-      `/api/thumbnails/runs?channelId=${encodeURIComponent(channelId)}`,
-      { cache: "no-store" }
-    );
-    if (!r.ok) return;
-    const j = (await r.json()) as {
-      runs: HistoryRun[];
-      spend: Spend;
-      retention: Retention;
-    };
-    setRuns(j.runs);
-    setSpend(j.spend);
-    setRetentionState(j.retention);
-    onRetention(j.retention);
-  }, [channelId, onRetention]);
+  const load = useCallback(
+    async (l: number) => {
+      if (!channelId) return;
+      const r = await fetch(
+        `/api/thumbnails/runs?channelId=${encodeURIComponent(channelId)}&limit=${l}`,
+        { cache: "no-store" }
+      );
+      if (!r.ok) return;
+      const j = (await r.json()) as {
+        runs: HistoryRun[];
+        spend: Spend;
+        retention: Retention;
+      };
+      setRuns(j.runs);
+      setSpend(j.spend);
+      setRetentionState(j.retention);
+      onRetention(j.retention);
+    },
+    [channelId, onRetention]
+  );
 
   useEffect(() => {
-    void load();
-  }, [load, reloadKey]);
+    void load(limit);
+  }, [load, limit, reloadKey]);
+
+  // A channel switch (or a fresh run landing) should start back at the
+  // first page rather than silently keeping whatever the user had grown
+  // the list to on the previous channel.
+  useEffect(() => {
+    setLimit(HISTORY_PAGE_SIZE);
+    setExpanded(new Set());
+  }, [channelId]);
 
   const remove = async (id: number) => {
     setBusy(true);
     try {
       await fetch(`/api/thumbnails/runs/${id}`, { method: "DELETE" });
-      await load();
+      await load(limit);
       onDeleted();
     } finally {
       setBusy(false);
     }
   };
 
+  const toggleExpanded = (id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const pickVariant = async (v: Variant) => {
+    await fetch(`/api/thumbnails/variants/${v.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pick: true }),
+    });
+    await load(limit);
+    onDeleted();
+  };
+
+  const deleteVariant = async (v: Variant) => {
+    if (!confirm("Delete this cover? This can't be undone.")) return;
+    await fetch(`/api/thumbnails/variants/${v.id}`, { method: "DELETE" });
+    await load(limit);
+    onDeleted();
+  };
+
+  const filteredRuns = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return runs;
+    return runs.filter((r) => r.title.toLowerCase().includes(q));
+  }, [runs, query]);
+
   if (runs.length === 0) return null;
+
+  const showMore = runs.length === limit && limit < HISTORY_LIMIT_CAP;
 
   return (
     <Card>
@@ -975,58 +1029,216 @@ function HistoryPanel({
 
         {open && (
           <div className="mt-3 space-y-2">
-            {runs.map((r) => (
-              <div
-                key={r.id}
-                className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-xs"
-              >
-                <div className="flex gap-1">
-                  {r.images
-                    .filter((v) => v.final_path ?? v.base_path)
-                    .slice(0, 4)
-                    .map((v) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={v.id}
-                        src={fileUrl((v.final_path ?? v.base_path)!)}
-                        alt=""
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find a cover by video title…"
+              className="h-8 text-xs"
+            />
+
+            {filteredRuns.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No runs match &ldquo;{query}&rdquo;.
+              </p>
+            ) : (
+              filteredRuns.map((r) => {
+                const isOpen = expanded.has(r.id);
+                return (
+                  <div
+                    key={r.id}
+                    className="rounded-md border border-border text-xs"
+                  >
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleExpanded(r.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleExpanded(r.id);
+                        }
+                      }}
+                      className="flex flex-wrap items-center gap-2 p-2 cursor-pointer"
+                    >
+                      <ChevronDown
                         className={cn(
-                          "h-9 w-16 rounded object-cover",
-                          v.picked === 1 && "ring-2 ring-emerald-500"
+                          "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                          isOpen && "rotate-180"
                         )}
                       />
-                    ))}
-                </div>
-                <div className="min-w-[8rem] flex-1">
-                  <div className="truncate font-medium">{r.title}</div>
-                  <div className="text-muted-foreground">
-                    {new Date(r.createdAt * 1000).toLocaleString()} ·{" "}
-                    {r.sourceKind} · {r.model} ·{" "}
-                    {r.aspect === "9:16" ? "9:16 Shorts" : "16:9"}
+                      <div className="flex gap-1">
+                        {r.images
+                          .filter((v) => v.final_path ?? v.base_path)
+                          .slice(0, 4)
+                          .map((v) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={v.id}
+                              src={fileUrl((v.final_path ?? v.base_path)!)}
+                              alt=""
+                              className={cn(
+                                "h-9 w-16 rounded object-cover",
+                                v.picked === 1 && "ring-2 ring-emerald-500"
+                              )}
+                            />
+                          ))}
+                      </div>
+                      <div className="min-w-[8rem] flex-1">
+                        <div className="truncate font-medium">{r.title}</div>
+                        <div className="text-muted-foreground">
+                          {new Date(r.createdAt * 1000).toLocaleString()} ·{" "}
+                          {r.sourceKind} · {r.model} ·{" "}
+                          {r.aspect === "9:16" ? "9:16 Shorts" : "16:9"}
+                        </div>
+                      </div>
+                      <span className="text-muted-foreground">
+                        {r.costCents !== null
+                          ? fmtCents(r.costCents)
+                          : r.credits
+                            ? `${r.credits} credits`
+                            : "no cost data"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void remove(r.id);
+                        }}
+                        disabled={busy}
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label="Delete run"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    {isOpen && (
+                      <div className="grid gap-4 border-t border-border p-3 sm:grid-cols-2">
+                        {r.images.map((v) => (
+                          <HistoryVariantCard
+                            key={v.id}
+                            variant={v}
+                            onPick={pickVariant}
+                            onDelete={deleteVariant}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-                <span className="text-muted-foreground">
-                  {r.costCents !== null
-                    ? fmtCents(r.costCents)
-                    : r.credits
-                      ? `${r.credits} credits`
-                      : "no cost data"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => remove(r.id)}
-                  disabled={busy}
-                  className="text-muted-foreground hover:text-destructive"
-                  aria-label="Delete run"
+                );
+              })
+            )}
+
+            {showMore && (
+              <div className="pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setLimit((l) => Math.min(HISTORY_LIMIT_CAP, l + HISTORY_PAGE_SIZE))
+                  }
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                  Show more
+                </Button>
               </div>
-            ))}
+            )}
           </div>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * One cover inside an expanded history run. Smaller and quieter than
+ * `VariantCard` — this is a look-back at what was made, not the working
+ * surface for a run in progress, so it skips the headline editor and the
+ * feedback field and keeps only pick / download / delete.
+ */
+function HistoryVariantCard({
+  variant,
+  onPick,
+  onDelete,
+}: {
+  variant: Variant;
+  onPick: (v: Variant) => Promise<void>;
+  onDelete: (v: Variant) => Promise<void>;
+}) {
+  // Same cache-busting key as VariantCard's overlayVersion — a headline
+  // re-render rewrites the file in place, so without this the browser
+  // would keep serving whatever it first cached for this cover.
+  const overlayVersion = useMemo(() => {
+    const s = variant.overlay_json ?? "";
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }, [variant.overlay_json]);
+
+  if (variant.error) {
+    return (
+      <div className="rounded-md border border-destructive/40 p-3 text-xs">
+        <div className="mb-1 flex items-center gap-1.5 font-medium text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5" /> Variant {variant.idx + 1}{" "}
+          failed
+        </div>
+        <div className="text-muted-foreground">{variant.error}</div>
+      </div>
+    );
+  }
+
+  const shown = variant.final_path ?? variant.base_path;
+
+  return (
+    <div
+      className={cn(
+        "space-y-2 rounded-md border p-2",
+        variant.picked ? "border-emerald-500" : "border-border"
+      )}
+    >
+      {shown && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={fileUrl(shown, overlayVersion)}
+          alt="generated thumbnail"
+          className="w-full rounded"
+        />
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {variant.picked ? (
+          <span className="inline-flex h-8 items-center gap-1.5 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Picked
+          </span>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5"
+            onClick={() => void onPick(variant)}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Pick
+          </Button>
+        )}
+        {shown && (
+          <a
+            href={fileUrl(shown)}
+            download
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs"
+          >
+            <Download className="h-3.5 w-3.5" /> PNG
+          </a>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 px-2 text-muted-foreground hover:text-destructive"
+          onClick={() => void onDelete(variant)}
+          aria-label="Delete this cover"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 }
 

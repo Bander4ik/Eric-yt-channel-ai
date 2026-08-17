@@ -265,6 +265,20 @@ export function selectThumbnailWindow(
     }
   }
 
+  // A channel whose newest cover is days old is judged on numbers that
+  // are still moving, whatever pool it came from. The ranking handles the
+  // age fairly now — views per day rather than raw totals — but "fairly
+  // ranked" is not "settled", and only the second one earns the word
+  // proven. Anything under a fortnight of history says so on screen.
+  if (!provisional && own.length > 0) {
+    const oldestDays = Math.max(
+      ...own.map((w) =>
+        w.publishedAt ? (Date.now() / 1000 - w.publishedAt) / 86400 : 0
+      )
+    );
+    if (oldestDays < 14) provisional = true;
+  }
+
   return {
     own,
     competitor,
