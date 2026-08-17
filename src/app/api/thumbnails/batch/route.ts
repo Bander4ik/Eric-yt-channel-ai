@@ -88,7 +88,11 @@ export async function POST(req: Request) {
       {
         error:
           source === "ideas"
-            ? "No cards are sitting in the Board's Idea column — add some first, or batch from Signals instead."
+            ? // The board is hidden for most people now, so an error that
+              // only says "go add cards to the Board" sends them looking
+              // for a tab that is not in their app. Name the way out that
+              // always exists first.
+              "Nothing saved to build from. Switch this to Signals, or type a title above and generate one cover — the Ideas board this reads from is turned off unless you enable it in Settings."
             : "No niche hits to work from — run a Niche Watch scan on the Signals tab first.",
       },
       { status: 400 }

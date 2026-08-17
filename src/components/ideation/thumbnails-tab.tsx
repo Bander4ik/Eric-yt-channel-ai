@@ -34,6 +34,7 @@ import {
 } from "@/lib/image-provider-types";
 import { TEXT_ZONES, type TextZone } from "@/lib/thumbnail-overlay-types";
 import { BrandAssetsPanel } from "@/components/ideation/brand-assets-panel";
+import { useUiPref } from "@/lib/ui-prefs";
 
 /**
  * Thumbnails tab — generate covers in the style that measurably works
@@ -306,7 +307,15 @@ export function ThumbnailsTab() {
   const [ownVideos, setOwnVideos] = useState<OwnVideo[]>([]);
   const [remix, setRemix] = useState<OwnVideo | null>(null);
   const [videoQuery, setVideoQuery] = useState("");
-  const [batchSource, setBatchSource] = useState<"ideas" | "signals">("ideas");
+  // The board is off by default now, and batching "from the Board" then
+  // fails with a message pointing at a tab the user cannot see. So the
+  // default source follows whether the board is actually on, and the
+  // option itself disappears when it is not.
+  const [boardVisible] = useUiPref("showIdeasBoard");
+  const [batchSource, setBatchSource] = useState<"ideas" | "signals">("signals");
+  useEffect(() => {
+    if (!boardVisible) setBatchSource("signals");
+  }, [boardVisible]);
   const [batchCount, setBatchCount] = useState(3);
   const [genJob, setGenJob] = useState<Job | null>(null);
   const [run, setRun] = useState<
@@ -658,6 +667,7 @@ export function ThumbnailsTab() {
             {mode === "batch" && (
               <BatchControls
                 source={batchSource}
+                boardVisible={boardVisible}
                 setSource={setBatchSource}
                 count={batchCount}
                 setCount={setBatchCount}
@@ -967,6 +977,7 @@ function HistoryPanel({
 function BatchControls({
   source,
   setSource,
+  boardVisible,
   count,
   setCount,
   perTitle,
@@ -977,6 +988,7 @@ function BatchControls({
 }: {
   source: "ideas" | "signals";
   setSource: (s: "ideas" | "signals") => void;
+  boardVisible: boolean;
   count: number;
   setCount: (n: number) => void;
   perTitle: number;
@@ -990,7 +1002,7 @@ function BatchControls({
       <p className="text-xs text-muted-foreground">
         The app picks what to work on:{" "}
         {source === "ideas"
-          ? "the cards that have been sitting longest in the Board's Idea column"
+          ? "the titles saved longest ago on the Ideas board"
           : "the hottest Niche Watch hits by views per hour, as your own take on the subject"}
         .
       </p>
@@ -1000,7 +1012,7 @@ function BatchControls({
           onChange={(e) => setSource(e.target.value as "ideas" | "signals")}
           className="rounded-md border border-border bg-background px-2 py-1 text-sm"
         >
-          <option value="ideas">From the Board</option>
+          {boardVisible && <option value="ideas">From the Board</option>}
           <option value="signals">From Signals</option>
         </select>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
