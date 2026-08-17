@@ -125,14 +125,17 @@ export async function POST(req: Request) {
 
     for (const v of targets) {
       try {
-        const text = await ocrThumbnail(v.thumbnail_url!, apiKey);
+        const read = await ocrThumbnail(v.thumbnail_url!, apiKey);
         // Always store the raw string result, including "" — an empty
         // string means OCR ran and found no overlaid text, which is a
         // completed result. Coercing it to NULL here used to make
         // listVideosMissingThumbnailText treat these videos as still
         // pending, so every textless thumbnail got re-OCR'd (and
         // re-billed) on every subsequent batch.
-        updateVideoThumbnailText(v.id, text);
+        // The kind travels with the text: a listicle cover's tile
+        // captions are real text and useless as packaging copy, and only
+        // the reader knows which it just looked at.
+        updateVideoThumbnailText(v.id, read.text, read.kind);
         done++;
       } catch (err) {
         failed++;

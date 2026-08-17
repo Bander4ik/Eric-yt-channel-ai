@@ -140,9 +140,13 @@ export function channelViewStats(): {
   median: number;
   count: number;
   withThumbText: number;
+  /** Covers whose text is artwork labels, deliberately not counted. */
+  labelOnly: number;
 } {
   const rows = activeChannelViewsRows();
-  if (rows.length === 0) return { avg: 0, median: 0, count: 0, withThumbText: 0 };
+  if (rows.length === 0) {
+    return { avg: 0, median: 0, count: 0, withThumbText: 0, labelOnly: 0 };
+  }
   const views = rows.map((r) => r.views).sort((a, b) => a - b);
   const total = views.reduce((a, b) => a + b, 0);
 
@@ -153,7 +157,24 @@ export function channelViewStats(): {
           `SELECT COUNT(*) AS n
            FROM videos
            WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
-             AND thumbnail_text IS NOT NULL AND thumbnail_text != ''`
+             AND thumbnail_text IS NOT NULL AND thumbnail_text != ''
+             AND (thumbnail_text_kind IS NULL OR thumbnail_text_kind = 'headline')`
+        )
+        .get(activeId) as { n: number } | undefined)
+    : undefined;
+
+  // Covers whose only text is artwork labels — a listicle's tile
+  // captions, a sign, a chart legend. They are counted here so the
+  // screen can say "12 covers left out, their text is tile labels"
+  // rather than quietly shrinking the sample and looking like it read
+  // everything.
+  const labelOnlyRow = activeId
+    ? (db
+        .prepare(
+          `SELECT COUNT(*) AS n
+             FROM videos
+            WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
+              AND thumbnail_text_kind = 'labels'`
         )
         .get(activeId) as { n: number } | undefined)
     : undefined;
@@ -163,6 +184,7 @@ export function channelViewStats(): {
     median: median(views),
     count: rows.length,
     withThumbText: withThumbTextRow?.n ?? 0,
+    labelOnly: labelOnlyRow?.n ?? 0,
   };
 }
 
@@ -189,6 +211,7 @@ export function topPackages(limit = 15): { channelAvg: number; rows: PackageRow[
        FROM videos
        WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
          AND thumbnail_text IS NOT NULL AND thumbnail_text != ''
+             AND (thumbnail_text_kind IS NULL OR thumbnail_text_kind = 'headline')
        ORDER BY views DESC
        LIMIT ?`
     )
@@ -463,6 +486,7 @@ export function thumbnailWordStats(
        FROM videos
        WHERE channel_id = ? AND views IS NOT NULL${shortsExclusionSql("videos", activeId)}
          AND thumbnail_text IS NOT NULL AND thumbnail_text != ''
+             AND (thumbnail_text_kind IS NULL OR thumbnail_text_kind = 'headline')
          AND published_at IS NOT NULL AND published_at <= ?`
     )
     .all(activeId, cutoff) as ThumbRow[];

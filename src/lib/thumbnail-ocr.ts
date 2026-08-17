@@ -14,11 +14,33 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const OCR_MODEL = "claude-sonnet-5";
 
+/**
+ * Two questions, not one: what the text says, and whether it is the
+ * cover's HEADLINE at all.
+ *
+ * The old prompt asked only for "the text", so a listicle cover came
+ * back as its ten tile captions — "LONG SKULL / TINY BODY / HORNED
+ * SKULL / …" — and everything downstream treated that as the channel's
+ * headline copy. The packaging stats then reported the most frequent
+ * words in a pile of tile nouns as if it were a finding about what makes
+ * people click. Naming the kind lets the rest of the app count only what
+ * can be counted, and say so when it skipped something.
+ */
 const OCR_PROMPT =
-  "Extract ONLY the text overlaid/printed on this YouTube thumbnail image. " +
-  "Return the exact visible text, preserving original casing, joining " +
-  "separate text blocks with ' / '. Do not describe the image. If there is " +
-  "no overlaid text, return exactly: NONE";
+  "Read the text on this YouTube thumbnail and answer in exactly two lines.\n" +
+  "Line 1: KIND: headline | labels | none\n" +
+  "  headline — one prominent line or block of overlaid words, added on top " +
+  "of the picture, meant to be read at a glance at thumbnail size.\n" +
+  "  labels — the text belongs to the artwork rather than sitting on top " +
+  "of it: captions naming the items in a grid or list, a sign, a chart " +
+  "legend, a name tag, a price on a product. Several small pieces scattered " +
+  "over the image are labels, not a headline. If a cover has BOTH a " +
+  "headline and labels, answer headline.\n" +
+  "  none — no readable text at all.\n" +
+  "Line 2: TEXT: the exact visible text, original casing, separate blocks " +
+  "joined with ' / '. For headline, give the headline only, not the labels. " +
+  "For none, write NONE.\n" +
+  "Do not describe the image. Do not add anything else.";
 
 export class ThumbnailOcrError extends Error {
   constructor(message: string) {
@@ -50,7 +72,7 @@ function mediaTypeFromContentType(contentType: string | null): SupportedImageMed
 export async function ocrThumbnail(
   thumbnailUrl: string,
   apiKey: string
-): Promise<string> {
+): Promise<OcrResult> {
   const res = await fetch(thumbnailUrl);
   if (!res.ok) {
     throw new ThumbnailOcrError(`Thumbnail fetch ${res.status}`);
@@ -92,8 +114,33 @@ export async function ocrThumbnail(
     );
   }
 
+  return parseOcrAnswer(raw);
+}
+
+export type OcrResult = {
+  text: string;
+  kind: "headline" | "labels" | "none";
+};
+
+/**
+ * Tolerant on purpose. A model that ignores the two-line shape and just
+ * returns the words still gives us usable copy, and calling that a
+ * headline keeps the old behaviour rather than silently dropping a
+ * channel's text out of every stat.
+ */
+export function parseOcrAnswer(raw: string): OcrResult {
   const trimmed = raw.trim();
-  if (trimmed.toUpperCase() === "NONE") return "";
-  return trimmed.replace(/\s*\n+\s*/g, " / ");
+  if (!trimmed) return { text: "", kind: "none" };
+
+  const kindMatch = trimmed.match(/^\s*KIND:\s*(headline|labels|none)\b/im);
+  const textMatch = trimmed.match(/^\s*TEXT:\s*([\s\S]*)$/im);
+
+  const kind = (kindMatch?.[1]?.toLowerCase() ?? "headline") as OcrResult["kind"];
+  const body = (textMatch ? textMatch[1] : trimmed).trim();
+
+  if (kind === "none" || body.toUpperCase() === "NONE" || !body) {
+    return { text: "", kind: "none" };
+  }
+  return { text: body.replace(/\s*\n+\s*/g, " / "), kind };
 }
 

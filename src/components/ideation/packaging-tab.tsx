@@ -32,6 +32,7 @@ type Stats = {
   median: number;
   count: number;
   withThumbText: number;
+  labelOnly: number;
 };
 
 type PackageRow = {
@@ -251,6 +252,16 @@ export function PackagingTab() {
             Packaging stats below only cover OCR&rsquo;d videos.
           </span>
         </div>
+      )}
+
+      {stats.labelOnly > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          {stats.labelOnly} of your covers are left out of the word stats on
+          purpose: their text is labels inside the artwork — the captions on a
+          list cover, a sign, a chart legend — not a headline. Counting those
+          would tell you your most-used word is whatever your tiles happen to
+          be named.
+        </p>
       )}
 
       {/* ---- Best title length ----

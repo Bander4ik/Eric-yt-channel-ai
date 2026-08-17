@@ -5328,6 +5328,19 @@ export function hookLibraryEntryForComment(
   const newVideoColumns: { name: string; type: string }[] = [
     { name: "thumbnail_text", type: "TEXT" },
     { name: "category", type: "TEXT" },
+    // What KIND of text the OCR found, which decides whether it may be
+    // counted as packaging copy at all:
+    //   'headline' → big overlaid words meant to be read at thumbnail
+    //                size. The only kind the word stats mean anything on.
+    //   'labels'   → captions inside the artwork: the ten tile names on a
+    //                listicle cover, a sign, a chart legend. Real text,
+    //                but counting it produces "your most-used thumbnail
+    //                word is SKULL", which is noise wearing a lab coat.
+    //   'none'     → nothing overlaid.
+    //   NULL       → OCR ran before this column existed; treated as
+    //                'headline', which is what those rows were counted as
+    //                anyway, so no silent change to anyone's numbers.
+    { name: "thumbnail_text_kind", type: "TEXT" },
   ];
   for (const col of newVideoColumns) {
     if (videoCols.includes(col.name)) continue;
@@ -5342,12 +5355,12 @@ export function hookLibraryEntryForComment(
 
 export function updateVideoThumbnailText(
   videoId: string,
-  text: string | null
+  text: string | null,
+  kind: "headline" | "labels" | "none" | null = null
 ): void {
-  db.prepare(`UPDATE videos SET thumbnail_text = ? WHERE id = ?`).run(
-    text,
-    videoId
-  );
+  db.prepare(
+    `UPDATE videos SET thumbnail_text = ?, thumbnail_text_kind = ? WHERE id = ?`
+  ).run(text, kind, videoId);
 }
 
 export function setVideoCategory(
