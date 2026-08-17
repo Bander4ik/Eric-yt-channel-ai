@@ -135,6 +135,7 @@ export async function GET(req: Request) {
       months: selection.windowMonths,
       requestedMonths: selection.requestedWindowMonths,
       widened: selection.widened,
+      provisional: selection.provisional,
       floor: STYLE_WINDOW_STARVATION_FLOOR,
       options: STYLE_WINDOW_OPTIONS,
       // What the CACHED profile above was actually built from — may
@@ -296,7 +297,10 @@ export async function POST(req: Request) {
       const ownLosers = listOwnThumbnailLosers(
         channelId,
         MAX_OWN_LOSER_REFS,
-        selection.windowMonths
+        selection.windowMonths,
+        // Same pool as the winners: comparing settled failures against
+        // unsettled successes would be two different populations again.
+        selection.provisional
       );
 
       const refs = await collectReferenceThumbnailsForWindow(
@@ -336,6 +340,7 @@ export async function POST(req: Request) {
             competitor: refs.competitor,
             ownLosers: refs.ownLosers,
             ownBasis,
+            provisional: selection.provisional,
           });
 
       // Confidence is decided by OUR winner count, not by the model's

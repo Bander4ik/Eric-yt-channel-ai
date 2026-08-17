@@ -129,6 +129,7 @@ type StyleResponse = {
     months: number | null;
     requestedMonths: number | null;
     widened: boolean;
+    provisional?: boolean;
     floor: number;
     options: WindowOption[];
     /** What the cached profile below was built from. */
@@ -1472,6 +1473,22 @@ function BasisPanel({
                   refuse rather than guess from this few.
                 </>
               )}
+            </span>
+          </div>
+        )}
+
+        {win.provisional && (
+          <div className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {/* A new channel has covers but no settled numbers. Saying
+                  nothing at all was the old behaviour and it left exactly
+                  the people who need this most with an empty screen. */}
+              This channel is too new for settled numbers — its videos
+              haven&rsquo;t had the two weeks a cover needs before its view
+              count means anything. The analysis will use{" "}
+              {available.own} of its covers ranked on the views so far, and
+              nothing it finds will be called proven.
             </span>
           </div>
         )}

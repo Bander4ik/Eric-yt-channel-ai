@@ -6785,9 +6785,26 @@ export function listRecentChannelTitles(channelId: string, limit = 6): string[] 
  */
 function rankOwnThumbnails(
   channelId: string,
-  windowMonths: number | null
+  windowMonths: number | null,
+  /**
+   * Drop the maturity cutoff.
+   *
+   * For a channel three weeks old — which is most of them when a student
+   * first opens this — every video is younger than the two-week settling
+   * period, so the pool is empty and the tool says nothing at all. Its
+   * covers still exist and still differ from each other; what is missing
+   * is settled numbers, not pictures. So the caller may ask for the
+   * unsettled ranking, and everything built on it is marked provisional
+   * rather than presented as proof.
+   */
+  ignoreMaturity = false
 ): { ranked: ThumbnailWinner[]; basis: "ctr" | "views" } {
   const windowFloor = thumbWindowFloor(windowMonths);
+  // "Published by now" when maturity is waived — still excludes anything
+  // scheduled in the future, which would otherwise rank on zero views.
+  const maturityBound = ignoreMaturity
+    ? Math.floor(Date.now() / 1000)
+    : thumbMaturityCutoff();
   const rows = db
     .prepare(
       `SELECT id, title, thumbnail_url, thumbnail_text, views, published_at
@@ -6801,8 +6818,8 @@ function rankOwnThumbnails(
     )
     .all(
       ...(windowFloor !== null
-        ? [channelId, thumbMaturityCutoff(), windowFloor, THUMB_SHORT_MAX_SECONDS]
-        : [channelId, thumbMaturityCutoff(), THUMB_SHORT_MAX_SECONDS])
+        ? [channelId, maturityBound, windowFloor, THUMB_SHORT_MAX_SECONDS]
+        : [channelId, maturityBound, THUMB_SHORT_MAX_SECONDS])
     ) as Array<{
     id: string;
     title: string;
@@ -6908,9 +6925,10 @@ export function thumbnailPoolDiagnosis(channelId: string): {
 export function listOwnThumbnailWinners(
   channelId: string,
   limit = 12,
-  windowMonths: number | null = null
+  windowMonths: number | null = null,
+  ignoreMaturity = false
 ): ThumbnailWinner[] {
-  return rankOwnThumbnails(channelId, windowMonths)
+  return rankOwnThumbnails(channelId, windowMonths, ignoreMaturity)
     .ranked.filter((w) => w.multiplier > 1)
     .sort((a, b) => b.multiplier - a.multiplier)
     .slice(0, limit);
@@ -6935,9 +6953,10 @@ export function listOwnThumbnailWinners(
 export function listOwnThumbnailLosers(
   channelId: string,
   limit = 4,
-  windowMonths: number | null = null
+  windowMonths: number | null = null,
+  ignoreMaturity = false
 ): ThumbnailWinner[] {
-  return rankOwnThumbnails(channelId, windowMonths)
+  return rankOwnThumbnails(channelId, windowMonths, ignoreMaturity)
     .ranked.filter((w) => w.multiplier < 1)
     .sort((a, b) => a.multiplier - b.multiplier)
     .slice(0, limit);

@@ -193,6 +193,11 @@ export type ThumbnailWindowSelection = {
   /** What was asked for, before widening. */
   requestedWindowMonths: number | null;
   widened: boolean;
+  /**
+   * True when the pool only exists because the two-week settling period
+   * was waived — a channel too new to have proven anything yet.
+   */
+  provisional: boolean;
 };
 
 /**
@@ -237,12 +242,36 @@ export function selectThumbnailWindow(
     if (opt.months === null) break; // nothing wider left to try
   }
 
+  // Last resort before refusing: a channel too YOUNG to have settled
+  // numbers.
+  //
+  // Widening the window cannot help here — the videos are all from the
+  // last fortnight, so every window contains the same nothing. A channel
+  // three weeks old with sixteen covers and 130K views on one of them
+  // was told "only 2 thumbnails found in its full history", which is
+  // true and useless: the covers exist, the maturity rule hides them.
+  // And a brand-new channel is exactly who needs this most.
+  //
+  // So drop the maturity requirement and rank on the views there are.
+  // Everything built on this is marked provisional and cannot claim to
+  // be proven — see `provisional` below and the guard in normaliseProfile.
+  let provisional = false;
+  if (own.length + competitor.length < STYLE_WINDOW_STARVATION_FLOOR) {
+    const fresh = listOwnThumbnailWinners(channelId, MAX_OWN_REFS, null, true);
+    if (fresh.length > own.length) {
+      own = fresh;
+      usedMonths = null;
+      provisional = true;
+    }
+  }
+
   return {
     own,
     competitor,
     windowMonths: usedMonths,
     requestedWindowMonths: requestedMonths,
     widened: usedMonths !== requestedMonths,
+    provisional,
   };
 }
 
@@ -579,7 +608,8 @@ function analysisInstructions(
   ownBasis: WinnerBasis,
   loserCount: number,
   ownCount: number,
-  competitorCount: number
+  competitorCount: number,
+  provisional: boolean
 ): string {
   const ownClause =
     ownBasis === "ctr"
@@ -604,7 +634,13 @@ There is no control group in this set — only winners. That limits you: you can
 
   return `You are analysing YouTube thumbnails from one channel. Your job is to identify the distinct visual FORMATS at work and to write a short PLAYBOOK the channel's owner can act on — not to praise them, not to invent a brand strategy.
 
-${ownClause}${loserClause}
+${ownClause}${loserClause}${
+    provisional
+      ? `
+
+THESE NUMBERS HAVE NOT SETTLED. This channel is new: its videos are younger than the two weeks a cover needs before its view count means anything, so the ranking above is the best available guess, not a verdict. Describe what you SEE and keep every rule to what the pictures show. Do not say a trait caused anything.`
+      : ""
+  }
 
 Each image is labelled with its multiplier and with the metric that multiplier is measured in. Higher multiplier = stronger evidence.
 
@@ -681,6 +717,8 @@ export async function analyseThumbnailStyle(input: {
   ownLosers?: ReferenceThumbnail[];
   /** What the OWN winners were ranked on. Competitors are always views. */
   ownBasis?: WinnerBasis;
+  /** Numbers have not settled — see selectThumbnailWindow. */
+  provisional?: boolean;
 }): Promise<{ profile: ThumbnailStyleProfile; model: string }> {
   const losers = input.ownLosers ?? [];
   const all = [...input.own, ...input.competitor, ...losers];
@@ -735,7 +773,8 @@ export async function analyseThumbnailStyle(input: {
       ownBasis,
       losers.length,
       input.own.length,
-      input.competitor.length
+      input.competitor.length,
+      input.provisional === true
     ),
   });
 
@@ -752,7 +791,8 @@ export async function analyseThumbnailStyle(input: {
   return {
     profile: normaliseProfile(
       parseJsonObject(raw),
-      losers.map((l) => l.videoId)
+      losers.map((l) => l.videoId),
+      input.provisional === true
     ),
     model: input.analyser.model,
   };
@@ -1027,7 +1067,8 @@ function policeProvenClaims(
 
 function normaliseProfile(
   raw: Record<string, unknown>,
-  loserIds: string[] = []
+  loserIds: string[] = [],
+  provisional = false
 ): ThumbnailStyleProfile {
   const avoid = Array.isArray(raw.avoid) ? (raw.avoid as unknown[]).map(String) : [];
   const caveats = Array.isArray(raw.caveats)
@@ -1037,7 +1078,14 @@ function normaliseProfile(
     typeof raw.channelRead === "string" && raw.channelRead.trim()
       ? (raw.channelRead as string).trim()
       : null;
-  const rules = policeProvenClaims(normaliseRules(raw.rules), loserIds);
+  // On a channel whose videos have not settled yet, nothing can be
+  // proven by definition — the numbers the claim would rest on are still
+  // moving. Passing no loser ids makes every rule fall to worth-testing,
+  // which is the honest state for a three-week-old channel.
+  const rules = policeProvenClaims(
+    normaliseRules(raw.rules),
+    provisional ? [] : loserIds
+  );
 
   const rawFormats = Array.isArray(raw.formats)
     ? (raw.formats as unknown[]).filter(
