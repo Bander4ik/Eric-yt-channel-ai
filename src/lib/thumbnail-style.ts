@@ -575,7 +575,12 @@ export async function collectReferenceThumbnailsForWindow(
  */
 export type WinnerBasis = "ctr" | "views";
 
-function analysisInstructions(ownBasis: WinnerBasis, loserCount: number): string {
+function analysisInstructions(
+  ownBasis: WinnerBasis,
+  loserCount: number,
+  ownCount: number,
+  competitorCount: number
+): string {
   const ownClause =
     ownBasis === "ctr"
       ? `The OWN CHANNEL images are PROVEN to outperform their channel's median CLICK-THROUGH RATE — the share of people who clicked after being shown the cover. That is direct evidence about the image itself.
@@ -602,6 +607,8 @@ There is no control group in this set — only winners. That limits you: you can
 ${ownClause}${loserClause}
 
 Each image is labelled with its multiplier and with the metric that multiplier is measured in. Higher multiplier = stronger evidence.
+
+THE COUNTS, so you never have to guess at them: ${ownCount} own-channel winners, ${loserCount} own-channel underperformers, ${competitorCount} competitor covers. Do NOT write any other count anywhere. A model that says "all 13 winners" when it was shown 12 has just told the owner something false about his own channel, and every number in the report becomes suspect. If you want to say a trait is everywhere, name the ids instead of counting them.
 
 MOST IMPORTANT INSTRUCTION — read this twice:
 
@@ -653,6 +660,8 @@ Return ONLY a JSON object, no prose and no code fence, in exactly this shape:
 }
 
 "dominant" is 2-4 hex colours. "textZone" is where the headline sits in most of them. "wordCountBand" is like "2-3" or "4-6".
+
+THE COMPETITOR COVERS: they are here so you can say what THIS channel does differently from the field it competes in. Either use them — a rule or a caveat that names a competitor id and what it does differently — or state plainly in "caveats" that the competitors add nothing this channel's own covers do not already show. Silently ignoring them is the one thing you may not do: they cost the owner money to look at.
 
 "avoid" is the mistakes list, and it is the most useful thing you will write. Each entry is ONE sentence containing both the mistake and the proof, in this shape: "<what not to do> — as in <which underperformer>, where <what actually went wrong>". Take these from the UNDERPERFORMED images wherever you can; only fall back to "what the winners never do" when there is no control group. Never write a generic don't ("avoid clutter") — a sentence that would fit any channel on YouTube helps nobody.
 
@@ -719,7 +728,15 @@ export async function analyseThumbnailStyle(input: {
       },
     });
   }
-  content.push({ type: "text", text: analysisInstructions(ownBasis, losers.length) });
+  content.push({
+    type: "text",
+    text: analysisInstructions(
+      ownBasis,
+      losers.length,
+      input.own.length,
+      input.competitor.length
+    ),
+  });
 
   const raw = await runTurn({
     analyser: input.analyser,
@@ -732,7 +749,10 @@ export async function analyseThumbnailStyle(input: {
   });
 
   return {
-    profile: normaliseProfile(parseJsonObject(raw)),
+    profile: normaliseProfile(
+      parseJsonObject(raw),
+      losers.map((l) => l.videoId)
+    ),
     model: input.analyser.model,
   };
 }
@@ -903,7 +923,41 @@ function normaliseRules(raw: unknown): PlaybookRule[] {
   return out.slice(0, MAX_RULES);
 }
 
-function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
+/**
+ * A rule may call itself "proven" only if its own evidence names one of
+ * the covers that FAILED.
+ *
+ * The instructions already say this, and the model still overstated: a
+ * rule about a map icon came back "proven" while the profile's own
+ * avoid list admitted an underperformer had the icon too. Asking more
+ * politely is not a fix — the check is mechanical, so it belongs in
+ * code. Nothing is deleted; the rule survives as "worth-testing", which
+ * is what an unchecked hypothesis is.
+ */
+function policeProvenClaims(
+  rules: PlaybookRule[],
+  loserIds: string[]
+): PlaybookRule[] {
+  if (rules.length === 0) return rules;
+  return rules.map((r) => {
+    if (r.strength !== "proven") return r;
+    const citesALoser =
+      loserIds.length > 0 && loserIds.some((id) => r.evidence.includes(id));
+    if (citesALoser) return r;
+    return {
+      ...r,
+      strength: "worth-testing" as const,
+      evidence: r.evidence
+        ? `${r.evidence} (Downgraded from "proven": this evidence does not name a cover that underperformed, so the trait has not been tested against failure.)`
+        : "Downgraded from \"proven\": no underperforming cover was cited, so the trait has not been tested against failure.",
+    };
+  });
+}
+
+function normaliseProfile(
+  raw: Record<string, unknown>,
+  loserIds: string[] = []
+): ThumbnailStyleProfile {
   const avoid = Array.isArray(raw.avoid) ? (raw.avoid as unknown[]).map(String) : [];
   const caveats = Array.isArray(raw.caveats)
     ? (raw.caveats as unknown[]).map(String)
@@ -912,7 +966,7 @@ function normaliseProfile(raw: Record<string, unknown>): ThumbnailStyleProfile {
     typeof raw.channelRead === "string" && raw.channelRead.trim()
       ? (raw.channelRead as string).trim()
       : null;
-  const rules = normaliseRules(raw.rules);
+  const rules = policeProvenClaims(normaliseRules(raw.rules), loserIds);
 
   const rawFormats = Array.isArray(raw.formats)
     ? (raw.formats as unknown[]).filter(
@@ -1129,6 +1183,12 @@ export async function buildGenerationPlan(input: {
   /** Real titles from this channel, as evidence of its language. */
   channelTitles?: string[];
   userNote?: string | null;
+  /**
+   * What this channel's owner already told us about earlier covers:
+   * which ones they used, and what was wrong with the ones they did not.
+   * The only signal here that cannot be measured off the channel.
+   */
+  coverVerdicts?: { title: string; picked: boolean; feedback: string | null }[];
   brandAssetDescriptions: string[];
   headlineZone?: TextZone;
   /** True when the bundled font can't render this script, so the image
@@ -1232,6 +1292,31 @@ ${listItems.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 Build a layout that holds exactly ${listItems.length} panels, one per item, in this order. Every panel must be recognisable at thumbnail size on a phone: do not merge two items into one illustration, do not repeat the same subject across panels, and do not invent an extra one. If the channel's format labels each panel, label them from these items.`
       : `\nThe channel owner adds: ${input.userNote}`;
 
+  // Past verdicts, stated plainly. A rejection with a reason is the
+  // single most useful sentence in this prompt — it is the one thing the
+  // channel's own thumbnails cannot tell us, because it is about OUR
+  // output, not theirs. Kept short and newest-first so it informs the
+  // brief without crowding out the style profile.
+  const verdicts = input.coverVerdicts ?? [];
+  const used = verdicts.filter((v) => v.picked);
+  const notes = verdicts.filter((v) => v.feedback && v.feedback.trim());
+  const verdictLine =
+    used.length || notes.length
+      ? `WHAT THIS OWNER HAS SAID ABOUT COVERS WE MADE BEFORE — treat this as stronger than anything inferred, because it is a direct instruction from the person who ships the video.${
+          used.length
+            ? `\n\nCovers they chose to use: ${used
+                .map((v) => `"${v.title}"`)
+                .join(", ")}. Whatever those did, keep doing.`
+            : ""
+        }${
+          notes.length
+            ? `\n\nCovers they rejected, and why:\n${notes
+                .map((v) => `- on "${v.title}": ${v.feedback}`)
+                .join("\n")}\n\nDo not repeat any of these mistakes in this cover. If a note contradicts the style profile, the note wins — it came from a person looking at the result.`
+            : ""
+        }`
+      : "";
+
   const languageLine = input.channelTitles?.length
     ? `THIS CHANNEL'S OWN RECENT TITLES (these show the language to write the headline in):\n${input.channelTitles
         .map((t) => `- ${t}`)
@@ -1254,6 +1339,8 @@ CHANNEL STYLE PROFILE (derived from thumbnails that beat this channel's median)$
 ${JSON.stringify(profile, null, 2)}
 
 ${playbookLine}
+
+${verdictLine}
 
 ${brandLine}
 ${textLine}

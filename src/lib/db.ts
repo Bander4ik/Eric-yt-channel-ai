@@ -6265,6 +6265,22 @@ try {
   if (!variantCols.includes("warning")) {
     db.exec(`ALTER TABLE thumbnail_variants ADD COLUMN warning TEXT`);
   }
+  // What the owner said about this cover, in their own words.
+  //
+  // The app has always had half a signal — Pick, meaning "I am using
+  // this one" — and it went nowhere. The other half is the more useful
+  // one and nobody was ever asked for it: WHY a cover was wrong. "The
+  // face is not our character", "too dark to read on a phone". One line
+  // like that, fed into the next generation, is worth more than another
+  // twenty reference images, because it is the only information in this
+  // whole pipeline that cannot be measured off the channel.
+  //
+  // Optional by design: never required, never a popup. Most people will
+  // never type here and the tool must be exactly as good for them as it
+  // is today.
+  if (!variantCols.includes("feedback")) {
+    db.exec(`ALTER TABLE thumbnail_variants ADD COLUMN feedback TEXT`);
+  }
 } catch {
   /* noop -- table may not exist yet on a brand-new DB */
 }
@@ -6851,6 +6867,44 @@ function rankOwnThumbnails(
   };
 }
 
+/**
+ * Why a channel produced no analysable covers — the honest version.
+ *
+ * A channel whose every video is a Short got told "No thumbnails to
+ * analyse yet. Sync this channel's videos" while all 35 of its videos
+ * were synced and every one had a thumbnail. The user is then sent to
+ * re-run a sync that will change nothing, twice, before giving up on the
+ * feature. A wrong diagnosis is worse than a blank screen.
+ */
+export function thumbnailPoolDiagnosis(channelId: string): {
+  videos: number;
+  withThumbnail: number;
+  longForm: number;
+  mature: number;
+} {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS videos,
+              SUM(CASE WHEN thumbnail_url IS NOT NULL THEN 1 ELSE 0 END) AS withThumbnail,
+              SUM(CASE WHEN duration_seconds IS NULL OR duration_seconds > ? THEN 1 ELSE 0 END) AS longForm,
+              SUM(CASE WHEN published_at IS NOT NULL AND published_at <= ? THEN 1 ELSE 0 END) AS mature
+         FROM videos
+        WHERE channel_id = ?`
+    )
+    .get(THUMB_SHORT_MAX_SECONDS, thumbMaturityCutoff(), channelId) as {
+    videos: number | null;
+    withThumbnail: number | null;
+    longForm: number | null;
+    mature: number | null;
+  };
+  return {
+    videos: row?.videos ?? 0,
+    withThumbnail: row?.withThumbnail ?? 0,
+    longForm: row?.longForm ?? 0,
+    mature: row?.mature ?? 0,
+  };
+}
+
 export function listOwnThumbnailWinners(
   channelId: string,
   limit = 12,
@@ -7296,6 +7350,49 @@ export function deleteThumbnailVariants(ids: number[]): number {
     return n;
   });
   return tx(ids);
+}
+
+/**
+ * The owner's own words about a cover, and the covers they chose.
+ *
+ * Both halves of the same signal, and the only one in this pipeline that
+ * is not derived from view counts: Pick says "this one shipped", a note
+ * says why another one did not. Fed back into the next generation so the
+ * same mistake is not made three times in a row.
+ *
+ * Scoped to the channel and capped, because this goes into a prompt: a
+ * year of notes would push the actual style profile out of the model's
+ * attention, and the newest ones describe the current look anyway.
+ */
+export function setThumbnailVariantFeedback(id: number, text: string | null): void {
+  db.prepare(`UPDATE thumbnail_variants SET feedback = ? WHERE id = ?`).run(
+    text && text.trim() ? text.trim().slice(0, 400) : null,
+    id
+  );
+}
+
+export type CoverVerdict = {
+  title: string;
+  picked: boolean;
+  feedback: string | null;
+};
+
+export function listCoverVerdicts(channelId: string, limit = 8): CoverVerdict[] {
+  return db
+    .prepare(
+      `SELECT r.title AS title, v.picked AS picked, v.feedback AS feedback
+         FROM thumbnail_variants v
+         JOIN thumbnail_runs r ON r.id = v.run_id
+        WHERE r.channel_id = ?
+          AND (v.picked = 1 OR (v.feedback IS NOT NULL AND v.feedback != ''))
+        ORDER BY v.id DESC
+        LIMIT ?`
+    )
+    .all(channelId, limit)
+    .map((r) => {
+      const row = r as { title: string; picked: number; feedback: string | null };
+      return { title: row.title, picked: row.picked === 1, feedback: row.feedback };
+    });
 }
 
 export function updateThumbnailVariantOverlay(

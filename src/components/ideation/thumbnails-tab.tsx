@@ -121,6 +121,7 @@ type StyleResponse = {
     competitor: number;
     competitorsTracked: number;
     minWinners: number;
+    emptyReason?: string | null;
   };
   winners: { own: Winner[]; competitor: Winner[] };
   window: {
@@ -149,6 +150,8 @@ type Variant = {
   /** Image is fine, something on top of it is not — see `warning` in db.ts. */
   warning: string | null;
   picked: number;
+  /** Optional note on what's wrong with this cover — fed into future generations. */
+  feedback: string | null;
 };
 
 type RemixOriginal = {
@@ -573,6 +576,15 @@ export function ThumbnailsTab() {
     await loadRun(channelId);
   };
 
+  const saveFeedback = async (variant: Variant, feedback: string) => {
+    await fetch(`/api/thumbnails/variants/${variant.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feedback }),
+    });
+    await loadRun(channelId);
+  };
+
   const deleteVariant = async (variant: Variant) => {
     if (!confirm("Delete this cover? This can't be undone.")) return;
     await fetch(`/api/thumbnails/variants/${variant.id}`, { method: "DELETE" });
@@ -838,6 +850,7 @@ export function ThumbnailsTab() {
             onRerender={rerenderOverlay}
             onPick={pick}
             onDelete={deleteVariant}
+            onFeedback={saveFeedback}
             retention={retention}
           />
           <PromptPanel
@@ -1445,11 +1458,20 @@ function BasisPanel({
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
-              Only {available.own + available.competitor} thumbnail
-              {available.own + available.competitor === 1 ? "" : "s"} found in{" "}
-              {windowPhrase(win.months)} — below the {win.floor} needed to
-              learn a reliable style. Running the analysis now will refuse
-              rather than guess from this few.
+              {/* The count alone lied on a channel holding 35 covers that
+                  were all Shorts: it read "0 thumbnails found in the
+                  channel's full history". The server knows the real
+                  reason, so say that first and keep the count as
+                  supporting detail. */}
+              {available.emptyReason ?? (
+                <>
+                  Only {available.own + available.competitor} thumbnail
+                  {available.own + available.competitor === 1 ? "" : "s"} found
+                  in {windowPhrase(win.months)} — below the {win.floor} needed
+                  to learn a reliable style. Running the analysis now will
+                  refuse rather than guess from this few.
+                </>
+              )}
             </span>
           </div>
         )}
@@ -1759,6 +1781,7 @@ function ResultGrid({
   onRerender,
   onPick,
   onDelete,
+  onFeedback,
   retention,
 }: {
   run: Run & { images: Variant[] };
@@ -1767,6 +1790,7 @@ function ResultGrid({
   onRerender: (v: Variant, patch: Record<string, unknown>) => void;
   onPick: (v: Variant) => void;
   onDelete: (v: Variant) => void;
+  onFeedback: (v: Variant, feedback: string) => Promise<void>;
   retention: Retention | null;
 }) {
   return (
@@ -1795,6 +1819,7 @@ function ResultGrid({
               onRerender={onRerender}
               onPick={onPick}
               onDelete={onDelete}
+              onFeedback={onFeedback}
               clearsAt={
                 retention && run.created_at
                   ? run.created_at + retention.keepDays * 86400
@@ -1861,6 +1886,7 @@ function VariantCard({
   onRerender,
   onPick,
   onDelete,
+  onFeedback,
   clearsAt,
 }: {
   variant: Variant;
@@ -1871,10 +1897,33 @@ function VariantCard({
   onRerender: (v: Variant, patch: Record<string, unknown>) => void;
   onPick: (v: Variant) => void;
   onDelete: (v: Variant) => void;
+  onFeedback: (v: Variant, feedback: string) => Promise<void>;
   /** Unix seconds this cover's automatic sweep fires, or null when the retention info hasn't loaded yet. */
   clearsAt: number | null;
 }) {
   const [showBase, setShowBase] = useState(false);
+  const [feedbackDraft, setFeedbackDraft] = useState(variant.feedback ?? "");
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
+  const [feedbackSaved, setFeedbackSaved] = useState(false);
+  // The reload after a save can bring back a variant object built before
+  // the PATCH lands (poll timing) — only adopt the server's value when the
+  // input isn't mid-edit, so a keystroke never gets clobbered.
+  useEffect(() => {
+    if (!feedbackSaving) setFeedbackDraft(variant.feedback ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variant.feedback]);
+
+  const saveFeedback = async () => {
+    if (feedbackDraft === (variant.feedback ?? "")) return;
+    setFeedbackSaving(true);
+    try {
+      await onFeedback(variant, feedbackDraft);
+      setFeedbackSaved(true);
+      setTimeout(() => setFeedbackSaved(false), 2000);
+    } finally {
+      setFeedbackSaving(false);
+    }
+  };
   const overlay = useMemo(() => {
     if (!variant.overlay_json) return null;
     try {
@@ -2024,6 +2073,27 @@ function VariantCard({
               {showBase ? "with text" : "background only"}
             </button>
           </>
+        )}
+      </div>
+
+      {/* Optional and quiet on purpose — most people will never touch it,
+          so it gets one plain line, no border, no icon, no colour. Saves
+          on blur/Enter rather than per keystroke, same as the headline
+          editor's "Apply" step. */}
+      <div className="flex items-center gap-1.5">
+        <Input
+          value={feedbackDraft}
+          onChange={(e) => setFeedbackDraft(e.target.value)}
+          onBlur={saveFeedback}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          disabled={feedbackSaving}
+          placeholder="Anything wrong with this one? (optional — helps the next batch)"
+          className="h-8 flex-1 text-xs"
+        />
+        {feedbackSaved && (
+          <span className="text-[11px] text-muted-foreground">Saved</span>
         )}
       </div>
 

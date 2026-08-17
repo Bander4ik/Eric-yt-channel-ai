@@ -6,6 +6,7 @@ import {
   getChannelFontPath,
   getThumbnailRun,
   deleteThumbnailVariants,
+  setThumbnailVariantFeedback,
   getThumbnailVariant,
   pickThumbnailVariant,
   updateThumbnailVariantOverlay,
@@ -43,6 +44,7 @@ type PatchBody = {
   uppercase?: unknown;
   maxHeightRatio?: unknown;
   pick?: unknown;
+  feedback?: unknown;
 };
 
 export async function PATCH(req: Request, ctx: Ctx) {
@@ -61,6 +63,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
     body = (await req.json()) as PatchBody;
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  // A note about this cover is stored on its own: no re-render, no cost,
+  // and it must work on a variant whose image is long gone.
+  if (typeof body.feedback === "string") {
+    setThumbnailVariantFeedback(variantId, body.feedback);
+    return NextResponse.json({ variant: getThumbnailVariant(variantId) });
   }
 
   if (body.pick === true) {

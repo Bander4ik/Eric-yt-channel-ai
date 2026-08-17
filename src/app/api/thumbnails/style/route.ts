@@ -5,6 +5,7 @@ import {
   getThumbnailStyleProfile,
   getThumbnailStyleWindowSetting,
   ownWinnerBasis,
+  thumbnailPoolDiagnosis,
   listOwnThumbnailLosers,
   saveThumbnailStyleProfile,
   setThumbnailStyleWindowMonths,
@@ -116,6 +117,14 @@ export async function GET(req: Request) {
       competitor: selection.competitor.length,
       competitorsTracked: countVisibleCompetitors(channelId),
       minWinners: MIN_WINNERS,
+      // Why the pool is empty, in the same words the POST would refuse
+      // with. Without this the tab said "0 thumbnails found in the
+      // channel's full history" to a channel holding 35 of them, all of
+      // which were Shorts.
+      emptyReason:
+        selection.own.length + selection.competitor.length === 0
+          ? noPoolReason(channelId)
+          : null,
     },
     winners: {
       own: selection.own.map(publicWinner),
@@ -259,7 +268,7 @@ export async function POST(req: Request) {
       {
         error:
           total === 0
-            ? "No thumbnails to analyse yet. Sync this channel's videos, and add competitors on the Competitors tab."
+            ? noPoolReason(channelId)
             : `Only ${total} thumbnail${total === 1 ? "" : "s"} found in ${windowLabel} — too few to learn a reliable style from. Sync more videos, add competitors, or widen the window before running this analysis.`,
       },
       { status: 400 }
@@ -378,4 +387,31 @@ export async function POST(req: Request) {
       widened: selection.widened,
     },
   });
+}
+
+/**
+ * Says the true reason a channel has nothing to analyse.
+ *
+ * The old text guessed one reason — "sync your videos" — and was wrong
+ * for the case that actually turned up: a channel whose 35 videos are
+ * all 60 seconds or shorter. Everything was synced; the covers were all
+ * Shorts, which this analysis skips because a 9:16 cover and a 16:9 one
+ * are different crafts. Being told to re-sync sends someone to do
+ * nothing, twice.
+ */
+function noPoolReason(channelId: string): string {
+  const d = thumbnailPoolDiagnosis(channelId);
+  if (d.videos === 0) {
+    return "This channel has no videos in the app yet — sync it on the Videos tab first.";
+  }
+  if (d.withThumbnail === 0) {
+    return `All ${d.videos} of this channel's videos are here, but none of them carry a thumbnail URL — re-sync on the Videos tab.`;
+  }
+  if (d.longForm === 0) {
+    return `Every one of this channel's ${d.videos} videos is 60 seconds or shorter, so there are no long-form covers to learn from. Shorts covers are a different shape and are deliberately left out. Nothing to fix here — this analysis needs regular videos.`;
+  }
+  if (d.mature === 0) {
+    return `This channel's ${d.videos} videos are all too new to judge — a cover needs a couple of weeks of views before its numbers mean anything. Come back once the earliest ones have settled.`;
+  }
+  return `Nothing analysable yet: ${d.videos} videos, ${d.longForm} of them long-form, none with enough settled view data. Add competitors on the Competitors tab to widen the pool.`;
 }

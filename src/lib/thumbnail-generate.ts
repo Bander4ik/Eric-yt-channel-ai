@@ -8,6 +8,7 @@ import {
   getChannelFontPath,
   getThumbnailStyleProfile,
   listBrandAssets,
+  listCoverVerdicts,
   listRecentChannelTitles,
   setThumbnailRunCost,
   setThumbnailRunCredits,
@@ -229,6 +230,9 @@ export async function runGeneration(
         formatIndex: input.formatIndex ?? null,
         channelTitles: listRecentChannelTitles(channelId),
         userNote: input.userNote ?? null,
+        // Newest first, capped inside the query: this is a prompt, not
+        // an archive, and the recent verdicts describe the current look.
+        coverVerdicts: listCoverVerdicts(channelId),
         // Announced to the prompt writer only when this model can actually
         // receive them. kie.ai takes reference images by public URL only,
         // so an uploaded character has nowhere to go and its
