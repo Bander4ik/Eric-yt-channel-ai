@@ -1709,10 +1709,16 @@ function BasisPanel({
           <div className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
-              Only {available.own} of your videos beat this channel&apos;s median
-              among mature uploads. Below {available.minWinners} that&apos;s a
-              hint, not a pattern — the generated style is worth testing, not
-              trusting.
+              {/* Explicit {" "} either side of these numbers: the compiler
+                  eats the plain space next to an expression here, and a
+                  client's screen read "Only 0of your videos" and "Below
+                  5that's a hint". Verified in the built chunk, not in the
+                  source, because the source looked correct. */}
+              Only {available.own}{" "}
+              of your videos beat this channel&apos;s median among mature
+              uploads. Below {available.minWinners}{" "}
+              that&apos;s a hint, not a pattern — the generated style is worth
+              testing, not trusting.
             </span>
           </div>
         )}

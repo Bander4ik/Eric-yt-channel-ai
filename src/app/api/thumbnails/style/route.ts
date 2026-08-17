@@ -35,6 +35,7 @@ import {
 } from "@/lib/settings-job";
 import { dryRunProfile, isDryRun } from "@/lib/thumbnail-dryrun";
 import { log } from "@/lib/logger";
+import { explainProviderErrorText } from "@/lib/provider-errors";
 
 /**
  * The channel's thumbnail style profile.
@@ -377,7 +378,13 @@ export async function POST(req: Request) {
       log.error("thumbnails", `Style analysis failed: ${message}`, err, {
         channelId,
       });
-      finishJob(key, { lastError: message, stage: "failed" });
+      // The log keeps the raw text; the screen gets something a channel
+      // owner can act on. A client was shown a raw 400 JSON blob about
+      // his Anthropic credit balance and read it as "the app is broken".
+      finishJob(key, {
+        lastError: explainProviderErrorText(err),
+        stage: "failed",
+      });
     }
   })();
 

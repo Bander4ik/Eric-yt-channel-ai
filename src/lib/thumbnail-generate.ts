@@ -46,6 +46,7 @@ import {
   type TextZone,
 } from "./thumbnail-overlay";
 import { log } from "./logger";
+import { explainProviderErrorText } from "./provider-errors";
 
 /**
  * One generation run, start to finish.
@@ -386,7 +387,10 @@ export async function runGeneration(
       done++;
     } catch (err) {
       failed++;
-      lastError = err instanceof Error ? err.message : String(err);
+      // Same reason as the analysis path: the person reading this card
+      // is a video maker, and "your credit balance is too low" wrapped in
+      // JSON reads as a broken app rather than a two-minute fix.
+      lastError = explainProviderErrorText(err);
       // A failed variant keeps its row so the UI can say which one broke
       // and why, instead of silently returning three of four.
       createThumbnailVariant({ runId, idx: i, error: lastError });
