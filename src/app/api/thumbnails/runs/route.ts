@@ -4,7 +4,9 @@ import {
   listThumbnailRuns,
   listThumbnailVariants,
   thumbnailSpendStats,
+  UNPICKED_KEEP_DAYS,
 } from "@/lib/db";
+import { pruneUnpickedCovers } from "@/lib/thumbnail-retention";
 
 /** Generation history for a channel, newest first, with spend totals. */
 
@@ -17,6 +19,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "No active channel selected." }, { status: 400 });
   }
   const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit")) || 20));
+
+  // The sweep runs here because this is the request that opens the
+  // Thumbnails tab, and on a local app that a person starts and closes
+  // there is no other moment that reliably happens. See
+  // thumbnail-retention.ts for why there is no scheduler.
+  const pruned = pruneUnpickedCovers();
 
   const runs = listThumbnailRuns(channelId, limit).map((run) => ({
     id: run.id,
@@ -37,6 +45,13 @@ export async function GET(req: Request) {
   return NextResponse.json({
     channelId,
     runs,
+    // Stated so the screen can tell the truth about what happens to
+    // covers, including what it just did.
+    retention: {
+      keepDays: UNPICKED_KEEP_DAYS,
+      justCleared: pruned.variants,
+      justClearedMb: Math.round((pruned.bytes / 1048576) * 10) / 10,
+    },
     spend: thumbnailSpendStats(channelId),
   });
 }

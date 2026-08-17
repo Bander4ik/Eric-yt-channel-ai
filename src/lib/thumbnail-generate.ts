@@ -38,6 +38,7 @@ import {
   coerceZone,
   DEFAULT_OVERLAY,
   fontCovers,
+  normaliseCover,
   renderOverlay,
   uncoveredCharacters,
   type OverlaySpec,
@@ -306,12 +307,17 @@ export async function runGeneration(
       // Writing that into a .png would hand the user a file whose name
       // lies about its contents, which matters the moment they open the
       // background layer in an editor.
+      // Store the cover at the size YouTube actually takes, as JPEG.
+      // The provider hands back ~2 MB PNGs whose extra pixels never
+      // reach anyone, and four of those per run is how a laptop fills up
+      // with pictures no one opens again.
+      const stored = await normaliseCover(image.bytes, aspect);
       const baseRel = relPath(
         channelId,
         runId,
-        `${i}-base${extensionFor(image.mimeType)}`
+        `${i}-base${stored.converted ? ".jpg" : extensionFor(image.mimeType)}`
       );
-      fs.writeFileSync(path.join(DATA_DIR, baseRel), image.bytes);
+      fs.writeFileSync(path.join(DATA_DIR, baseRel), stored.bytes);
 
       let finalRel: string;
       let overlayJson: string | null = null;
@@ -323,11 +329,11 @@ export async function runGeneration(
       } else {
         try {
           const composited = await renderOverlay(
-            image.bytes,
+            stored.bytes,
             overlaySpec,
             fontAbs
           );
-          finalRel = relPath(channelId, runId, `${i}-final.png`);
+          finalRel = relPath(channelId, runId, `${i}-final.jpg`);
           fs.writeFileSync(path.join(DATA_DIR, finalRel), composited);
           overlayJson = JSON.stringify(overlaySpec);
         } catch (overlayErr) {

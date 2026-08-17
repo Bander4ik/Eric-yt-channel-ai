@@ -7223,6 +7223,68 @@ export function listThumbnailVariants(runId: number): ThumbnailVariantRow[] {
     .all(runId) as ThumbnailVariantRow[];
 }
 
+/**
+ * How long a cover nobody chose is kept.
+ *
+ * Generated covers are the heaviest thing this app writes, and most of
+ * them are rejects the moment the set finishes: four come back, one gets
+ * used. Keeping the other three forever is how a laptop fills up with
+ * pictures no one will open again.
+ *
+ * Seven days rather than immediately, because people come back to a set,
+ * compare, show someone, change their mind. Picked covers are never
+ * touched by this — choosing one is the signal that it is the output,
+ * not a candidate.
+ */
+export const UNPICKED_KEEP_DAYS = 7;
+
+/**
+ * Covers past that window that nobody picked, with their files.
+ *
+ * Deliberately a plain query rather than a scheduled task: this app is a
+ * local one that a person starts and closes, so there is no daemon to
+ * run a nightly job and no clock ticking while it is shut. The caller
+ * runs this when the app is used — the only moment that reliably exists
+ * — which makes the honest rule "cleared the next time you open the app
+ * after they turn a week old", and that is what the screen says.
+ */
+export function listPrunableThumbnails(days = UNPICKED_KEEP_DAYS): {
+  ids: number[];
+  files: string[];
+} {
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+  const rows = db
+    .prepare(
+      `SELECT v.id, v.base_path, v.final_path
+         FROM thumbnail_variants v
+         JOIN thumbnail_runs r ON r.id = v.run_id
+        WHERE v.picked = 0 AND r.created_at < ?`
+    )
+    .all(cutoff) as Array<{
+    id: number;
+    base_path: string | null;
+    final_path: string | null;
+  }>;
+  const files = new Set<string>();
+  for (const r of rows) {
+    if (r.base_path) files.add(r.base_path);
+    if (r.final_path) files.add(r.final_path);
+  }
+  return { ids: rows.map((r) => r.id), files: [...files] };
+}
+
+/** Drops variant rows by id. Files are the caller's job — see retention. */
+export function deleteThumbnailVariants(ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const stmt = db.prepare(`DELETE FROM thumbnail_variants WHERE id = ?`);
+  const tx = db.transaction((list: number[]) => {
+    let n = 0;
+    for (const id of list) n += stmt.run(id).changes;
+    return n;
+  });
+  return tx(ids);
+}
+
 export function updateThumbnailVariantOverlay(
   id: number,
   finalPath: string,

@@ -172,6 +172,8 @@ type Run = {
   variantsList?: Variant[];
   /** Set for remix runs: the cover that actually shipped. */
   compareWith?: RemixOriginal | null;
+  /** Present on the raw DB row this is spread from; used for the per-cover "clears on" date. */
+  created_at?: number;
 };
 
 type GenerateResponse = {
@@ -235,6 +237,13 @@ type Spend = {
   runs: number;
   runsWithoutCost: number;
   images: number;
+};
+
+/** The unpicked-cover sweep — see thumbnail-retention.ts for why it runs on request, not a schedule. */
+type Retention = {
+  keepDays: number;
+  justCleared: number;
+  justClearedMb: number;
 };
 
 function fileUrl(rel: string, version?: string): string {
@@ -322,6 +331,10 @@ export function ThumbnailsTab() {
     (Run & { images: Variant[] }) | null
   >(null);
   const [busy, setBusy] = useState(false);
+  // Fed by HistoryPanel's load (the only endpoint that returns it) and
+  // reused here so the ResultGrid cards can state the same rule with the
+  // same numbers instead of guessing or hardcoding them.
+  const [retention, setRetention] = useState<Retention | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
   const [editing, setEditing] = useState<Record<number, string>>({});
@@ -557,6 +570,12 @@ export function ThumbnailsTab() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pick: true }),
     });
+    await loadRun(channelId);
+  };
+
+  const deleteVariant = async (variant: Variant) => {
+    if (!confirm("Delete this cover? This can't be undone.")) return;
+    await fetch(`/api/thumbnails/variants/${variant.id}`, { method: "DELETE" });
     await loadRun(channelId);
   };
 
@@ -807,6 +826,7 @@ export function ThumbnailsTab() {
         channelId={channelId}
         reloadKey={run?.id ?? 0}
         onDeleted={() => void loadRun(channelId)}
+        onRetention={setRetention}
       />
 
       {run && run.images.length > 0 && (
@@ -817,6 +837,8 @@ export function ThumbnailsTab() {
             setEditing={setEditing}
             onRerender={rerenderOverlay}
             onPick={pick}
+            onDelete={deleteVariant}
+            retention={retention}
           />
           <PromptPanel
             run={run}
@@ -846,14 +868,17 @@ function HistoryPanel({
   channelId,
   reloadKey,
   onDeleted,
+  onRetention,
 }: {
   channelId: string | null;
   reloadKey: number;
   onDeleted: () => void;
+  onRetention: (r: Retention) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [runs, setRuns] = useState<HistoryRun[]>([]);
   const [spend, setSpend] = useState<Spend | null>(null);
+  const [retention, setRetentionState] = useState<Retention | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -863,10 +888,16 @@ function HistoryPanel({
       { cache: "no-store" }
     );
     if (!r.ok) return;
-    const j = (await r.json()) as { runs: HistoryRun[]; spend: Spend };
+    const j = (await r.json()) as {
+      runs: HistoryRun[];
+      spend: Spend;
+      retention: Retention;
+    };
     setRuns(j.runs);
     setSpend(j.spend);
-  }, [channelId]);
+    setRetentionState(j.retention);
+    onRetention(j.retention);
+  }, [channelId, onRetention]);
 
   useEffect(() => {
     void load();
@@ -910,6 +941,23 @@ function HistoryPanel({
             </span>
           )}
         </button>
+
+        {retention && (
+          <div className="mt-1.5 space-y-0.5">
+            <p className="text-xs text-muted-foreground">
+              Covers you don&apos;t pick are cleared {retention.keepDays} days
+              after they were made — the next time you open this tab. Picked
+              covers are kept until you delete them yourself.
+            </p>
+            {retention.justCleared > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Just cleared {retention.justCleared} old cover
+                {retention.justCleared === 1 ? "" : "s"} (
+                {retention.justClearedMb} MB).
+              </p>
+            )}
+          </div>
+        )}
 
         {open && (
           <div className="mt-3 space-y-2">
@@ -1710,12 +1758,16 @@ function ResultGrid({
   setEditing,
   onRerender,
   onPick,
+  onDelete,
+  retention,
 }: {
   run: Run & { images: Variant[] };
   editing: Record<number, string>;
   setEditing: (v: Record<number, string>) => void;
   onRerender: (v: Variant, patch: Record<string, unknown>) => void;
   onPick: (v: Variant) => void;
+  onDelete: (v: Variant) => void;
+  retention: Retention | null;
 }) {
   return (
     <Card>
@@ -1742,6 +1794,12 @@ function ResultGrid({
               setDraft={(text) => setEditing({ ...editing, [v.id]: text })}
               onRerender={onRerender}
               onPick={onPick}
+              onDelete={onDelete}
+              clearsAt={
+                retention && run.created_at
+                  ? run.created_at + retention.keepDays * 86400
+                  : null
+              }
             />
           ))}
         </div>
@@ -1802,6 +1860,8 @@ function VariantCard({
   setDraft,
   onRerender,
   onPick,
+  onDelete,
+  clearsAt,
 }: {
   variant: Variant;
   /** A 9:16 cover is capped in height so two of them still fit a screen. */
@@ -1810,6 +1870,9 @@ function VariantCard({
   setDraft: (s: string) => void;
   onRerender: (v: Variant, patch: Record<string, unknown>) => void;
   onPick: (v: Variant) => void;
+  onDelete: (v: Variant) => void;
+  /** Unix seconds this cover's automatic sweep fires, or null when the retention info hasn't loaded yet. */
+  clearsAt: number | null;
 }) {
   const [showBase, setShowBase] = useState(false);
   const overlay = useMemo(() => {
@@ -1926,6 +1989,15 @@ function VariantCard({
             <Download className="h-3.5 w-3.5" /> PNG
           </a>
         )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 px-2 text-muted-foreground hover:text-destructive"
+          onClick={() => onDelete(variant)}
+          aria-label="Delete this cover"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
         {variant.base_path && variant.final_path !== variant.base_path && (
           <>
             <a
@@ -1954,6 +2026,18 @@ function VariantCard({
           </>
         )}
       </div>
+
+      {variant.picked ? (
+        <p className="text-[11px] text-muted-foreground">
+          Kept — you picked this one.
+        </p>
+      ) : (
+        clearsAt !== null && (
+          <p className="text-[11px] text-muted-foreground">
+            Clears on {new Date(clearsAt * 1000).toLocaleDateString()}
+          </p>
+        )
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   DATA_DIR,
   getChannelFontPath,
   getThumbnailRun,
+  deleteThumbnailVariants,
   getThumbnailVariant,
   pickThumbnailVariant,
   updateThumbnailVariantOverlay,
@@ -126,7 +127,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const finalRel =
       variant.final_path && variant.final_path !== variant.base_path
         ? variant.final_path
-        : variant.base_path.replace(/-base\.[a-z0-9]+$/i, "-final.png");
+        : variant.base_path.replace(/-base\.[a-z0-9]+$/i, "-final.jpg");
     fs.writeFileSync(path.join(DATA_DIR, finalRel), composited);
     updateThumbnailVariantOverlay(variantId, finalRel, JSON.stringify(spec));
     return NextResponse.json({ variant: getThumbnailVariant(variantId) });
@@ -146,4 +147,52 @@ function parseOverlay(json: string | null): Partial<OverlaySpec> {
   } catch {
     return {};
   }
+}
+
+/**
+ * Delete one cover — file and row.
+ *
+ * The run-level delete already existed, but a set of four is usually
+ * three rejects and one keeper, and having to drop all four to clear the
+ * rejects is why people leave everything lying there instead. Works on
+ * picked covers too: a cover the owner chose is theirs to remove, and
+ * the automatic sweep deliberately never touches those.
+ */
+export async function DELETE(_req: Request, ctx: Ctx) {
+  const { id } = await ctx.params;
+  const variantId = Number(id);
+  if (!Number.isFinite(variantId)) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  }
+  const variant = getThumbnailVariant(variantId);
+  if (!variant) {
+    return NextResponse.json({ error: "variant not found" }, { status: 404 });
+  }
+
+  for (const rel of new Set(
+    [variant.base_path, variant.final_path].filter((p): p is string => !!p)
+  )) {
+    try {
+      fs.unlinkSync(path.join(DATA_DIR, rel));
+    } catch {
+      /* already gone — the row is what mattered */
+    }
+  }
+  deleteThumbnailVariants([variantId]);
+
+  // Take the run's folder with it once the last cover in it is gone.
+  // rmdir, never a recursive delete: if anything unexpected is still in
+  // there, leaving it is the safe answer for a path built from stored
+  // data. An empty directory per run is small, but this app is being
+  // fixed today precisely for the things that are small and accumulate.
+  const dir = path.dirname(
+    path.join(DATA_DIR, variant.base_path ?? variant.final_path ?? "")
+  );
+  try {
+    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+  } catch {
+    /* not empty, or never created */
+  }
+
+  return NextResponse.json({ ok: true, deleted: variantId });
 }
