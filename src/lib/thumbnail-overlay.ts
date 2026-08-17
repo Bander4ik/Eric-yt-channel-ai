@@ -220,6 +220,59 @@ const MIN_FONT_RATIO = 24 / 720;
 const LINE_SPACING = 1.06;
 
 /**
+ * PNG chunks the decoder must see, and nothing else.
+ *
+ * Every image GPT Image returns — straight from OpenAI or through
+ * kie.ai — carries a `caBX` chunk: the C2PA "content credentials"
+ * manifest that says an AI made this picture. It is ~25 KB of metadata
+ * sitting between IHDR and the pixels, and `@napi-rs/canvas` refuses the
+ * whole file when it meets one from a buffer, reporting it as
+ * `Invalid SVG image` — the message it falls back to when nothing it
+ * knows can decode the bytes.
+ *
+ * The result was a cover generated, paid for, and then shipped WITHOUT
+ * its headline, which is the one thing that makes it look like the
+ * channel. Measured, not guessed: the same file loads fine once the
+ * ancillary chunks are gone and fails again the moment `caBX` is put
+ * back.
+ *
+ * So the pixels are re-wrapped with only the four critical chunks
+ * before decoding. Nothing about the image changes — colour profiles
+ * and text metadata are irrelevant to compositing — and any file that
+ * is not a PNG, or that this parser cannot walk cleanly, is handed over
+ * untouched rather than mangled.
+ */
+const CRITICAL_PNG_CHUNKS = new Set(["IHDR", "PLTE", "IDAT", "IEND"]);
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+export function stripPngMetadata(bytes: Buffer): Buffer {
+  if (bytes.length < 8 || !bytes.subarray(0, 8).equals(PNG_MAGIC)) return bytes;
+  try {
+    const kept: Buffer[] = [bytes.subarray(0, 8)];
+    let offset = 8;
+    let sawEnd = false;
+    while (offset + 8 <= bytes.length) {
+      const length = bytes.readUInt32BE(offset);
+      const type = bytes.toString("ascii", offset + 4, offset + 8);
+      const end = offset + 12 + length;
+      // A chunk that runs past the end of the file means this is not a
+      // PNG we understand; hand the original back rather than emit a
+      // truncated one.
+      if (end > bytes.length) return bytes;
+      if (CRITICAL_PNG_CHUNKS.has(type)) kept.push(bytes.subarray(offset, end));
+      if (type === "IEND") {
+        sawEnd = true;
+        break;
+      }
+      offset = end;
+    }
+    return sawEnd ? Buffer.concat(kept) : bytes;
+  } catch {
+    return bytes;
+  }
+}
+
+/**
  * Draws `spec.text` onto `baseImage` and returns PNG bytes at the size
  * the spec's aspect calls for. Pure and cheap — re-rendering after a
  * text edit costs nothing and calls no API.
@@ -235,7 +288,7 @@ export async function renderOverlay(
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  const img = await loadImage(baseImage);
+  const img = await loadImage(stripPngMetadata(baseImage));
   // cover-fit: fill the frame, crop the overflow, never letterbox.
   const scale = Math.max(width / img.width, height / img.height);
   const drawW = img.width * scale;

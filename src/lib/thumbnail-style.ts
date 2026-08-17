@@ -1210,7 +1210,24 @@ ${ASPECT_INSTRUCTIONS[input.aspect ?? DEFAULT_ASPECT]}`,
     // Falling back to the raw title is better than an empty headline —
     // the user can edit it for free, and a blank cover is useless.
     overlayCandidates: candidates.length ? candidates : [input.title],
-    zone: input.headlineZone ?? coerceZone(parsed.zone),
+    // Where the headline goes is measured, not decided in the moment.
+    //
+    // This channel's winners put 2-3 words in the TOP-LEFT — the profile
+    // says so with the videos to back it. The prompt writer returned
+    // "bottom-left" for the same run, and the cover came out looking
+    // like somebody else's channel. The model is answering about the
+    // picture it just imagined; the profile is answering about twelve
+    // covers that actually won. Data wins.
+    //
+    // The model still gets the last word in the one case where there is
+    // nothing to measure: `n` is how many images supported the zone, and
+    // at zero the profile's value is only `coerceZone`'s default rather
+    // than an observation. An explicit choice in the UI beats both.
+    zone:
+      input.headlineZone ??
+      (profile.composition.n > 0
+        ? profile.composition.textZone
+        : coerceZone(parsed.zone)),
   };
 }
 

@@ -7228,8 +7228,15 @@ export function updateThumbnailVariantOverlay(
   finalPath: string,
   overlayJson: string
 ): void {
+  // Clearing the warning is part of the same write on purpose. The
+  // warning says "the headline could not be drawn on this" — and the
+  // only way to reach this function is by drawing one. Leaving it behind
+  // told the user a cover was broken while they were looking at the
+  // finished thing, which is worse than never warning at all.
   db.prepare(
-    `UPDATE thumbnail_variants SET final_path = ?, overlay_json = ? WHERE id = ?`
+    `UPDATE thumbnail_variants
+        SET final_path = ?, overlay_json = ?, warning = NULL
+      WHERE id = ?`
   ).run(finalPath, overlayJson, id);
 }
 
