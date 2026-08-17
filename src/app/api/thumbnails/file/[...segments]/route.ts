@@ -55,13 +55,27 @@ export async function GET(_req: Request, ctx: Ctx) {
     CONTENT_TYPES[path.extname(requested).toLowerCase()] ??
     "application/octet-stream";
 
+  // Backgrounds really are written once: a new generation writes a new
+  // path, so the browser may hold one forever. The composited `-final`
+  // file is NOT — every headline edit and every zone change rewrites it
+  // in place, at the same path. Calling that immutable told the browser
+  // to keep the old picture for a year, so re-rendering appeared to do
+  // nothing at all: the file on disk changed and the screen did not.
+  // Found by Vlad changing the zone and watching nothing happen, after
+  // my own checks with curl passed — curl has no cache.
+  const mutable = /-final\.[a-z0-9]+$/i.test(requested);
+
   return new Response(new Uint8Array(body), {
     headers: {
       "Content-Type": type,
       "Content-Length": String(body.length),
-      // Files are immutable once written — a new generation writes a new
-      // path — so the browser can hold on to them.
-      "Cache-Control": "private, max-age=31536000, immutable",
+      "Cache-Control": mutable
+        ? "private, no-cache, must-revalidate"
+        : "private, max-age=31536000, immutable",
+      // Cheap validator so a revalidation costs a 304 rather than a
+      // megabyte: the file's size and mtime change together whenever we
+      // rewrite it.
+      ETag: `"${stat.size.toString(16)}-${Math.trunc(stat.mtimeMs).toString(16)}"`,
     },
   });
 }

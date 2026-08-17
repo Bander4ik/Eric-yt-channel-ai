@@ -1038,15 +1038,37 @@ export function profileForFormat(
   };
 }
 
-const PROMPT_INSTRUCTIONS = `You write prompts for an image generation model that will produce a YouTube thumbnail BACKGROUND, plus the short headline that will be composited on top of it afterwards.
+/**
+ * The prompt writer's brief. Takes the lettering mode because these two
+ * jobs are opposites: one asks for a clean background with a calm zone
+ * for type we will add, the other asks for a finished cover with the
+ * headline already lettered in the channel's own hand. Leaving a blanket
+ * "no text anywhere" in here while telling the writer elsewhere to
+ * include the headline is a contradiction, and the model resolved it the
+ * way anyone would — by obeying the rule marked critical, so covers came
+ * back wordless.
+ */
+function promptInstructions(modelRendersText: boolean): string {
+  const opening = modelRendersText
+    ? "You write prompts for an image generation model that will produce a FINISHED YouTube thumbnail — artwork AND the headline lettered into it."
+    : "You write prompts for an image generation model that will produce a YouTube thumbnail BACKGROUND, plus the short headline that will be composited on top of it afterwards.";
+  const textRule = modelRendersText
+    ? `- The image MUST carry the headline, lettered as described above and spelled exactly. Put it in the prompt in quotes so the model cannot paraphrase it.
+- Then close the prompt with this sentence, verbatim: "The only text anywhere in the image is that headline — no captions, no labels, no numbers, no aspect-ratio marks, no platform or channel logo, no watermark, no user-interface elements of any kind." An image model that is allowed to letter one thing will letter several unless it is told what NOT to write, and words that appear anywhere in your prompt are exactly what it reaches for: it has painted "16:9" into a corner and stamped a YouTube logo on a cover, both lifted straight out of instructions meant for you, not for the picture.
+- For the same reason, never put the words "YouTube", "thumbnail", "16:9" or "9:16" inside the "prompt" field. Describe the frame as landscape or vertical instead.`
+    : "- The image must contain NO TEXT, NO LETTERING, NO WATERMARKS and no logos. The headline is added later by a separate renderer. State this in the prompt.";
+  const zoneRule = modelRendersText
+    ? "- Keep the area around the headline visually calm — no busy detail behind the words — so it reads at thumbnail size on a phone."
+    : "- Leave the headline zone visually calm — no busy detail there — so overlaid text stays readable.";
+  return `${opening}
 
 Critical constraints:
 - The reference images fall into two kinds and they are NOT to be treated the same way. Say both of these explicitly in the prompt whenever brand assets are present.
   - CHANNEL references (this channel's own and its competitors' thumbnails): DERIVE the visual grammar from them — composition, palette, mood, treatment. Do NOT reproduce any one of them: not its subject, not its layout, not its specific scene.
   - BRAND references (a character, mascot, logo or frame the owner uploaded): the opposite. REPRODUCE the supplied brand character as the same individual — same face, hair, clothing and proportions — and the supplied logo or frame as the same graphic. It may be re-posed, re-lit and placed anywhere the composition needs, but it must be recognisably the same one, not a person "in that style".
   - Where the two disagree, the brand reference wins on WHO or WHAT is depicted, and the channel references win on HOW it is depicted.
-- The image must contain NO TEXT, NO LETTERING, NO WATERMARKS and no logos. The headline is added later by a separate renderer. State this in the prompt.
-- Leave the headline zone visually calm — no busy detail there — so overlaid text stays readable.
+${textRule}
+${zoneRule}
 - Write the headline candidates in the channel's own language, shown by the sample titles you are given. The subject matter is irrelevant to this: a video about Norway on an English channel still gets an English headline. Never translate the channel's language into another one.
 - If the profile names a recurring non-text graphic element (an arrow, a frame, a marker), include it in the prompt. It is not text and it is part of why these covers work.
 
@@ -1058,7 +1080,8 @@ Return ONLY a JSON object, no prose and no code fence:
   "zone": "top-left"|"top-center"|"top-right"|"left"|"center"|"right"|"bottom-left"|"bottom-center"|"bottom-right"
 }
 
-"prompt" is one paragraph, concrete and visual. "overlayCandidates" are three headline options for the thumbnail, each within the channel's observed word-count band — punchy, not a restatement of the full title. "zone" is where the headline should sit.`;
+"prompt" is one paragraph, concrete and visual. "overlayCandidates" are three headline options for the thumbnail, each within the channel's observed word-count band — punchy, not a restatement of the full title. The FIRST one is the headline that gets lettered, so make it the strongest. "zone" is where the headline should sit.`;
+}
 
 /**
  * The frame constraint the prompt has to carry. A Shorts cover is not a
@@ -1113,8 +1136,29 @@ export async function buildGenerationPlan(input: {
       )}. These are not style examples — they are the actual character/graphic that must appear. Instruct the image model, in the prompt, to reproduce the supplied brand character as the same individual (same face, hair, clothing, proportions) rather than inventing someone who merely fits the channel's style. Everything else about the image still follows the channel style profile.`
     : "The channel supplies no brand assets, so every subject is derived from the style profile alone.";
 
+  // Who letters the headline decides whether the cover looks like THIS
+  // channel or like our app.
+  //
+  // Our compositor draws every channel's headline in the one font that
+  // ships with the repo, with the same stroke and the same shadow. That
+  // is correct spelling and free edits — and it is also the reason a
+  // cover for a newspaper-style crime channel and a cover for a glossy
+  // science channel come back wearing identical type. The channel's own
+  // winning covers are already attached to this request as references,
+  // and a modern image model can letter from them, so when the caller
+  // asks for it the model does the lettering and the typography follows
+  // the channel instead of following us.
+  const tt = profile.textTreatment;
   const textLine = input.modelRendersText
-    ? `IMPORTANT OVERRIDE: this channel's language cannot be rendered by our text compositor, so the image model MUST draw the headline itself, spelled exactly as given. Include the exact headline text in the prompt, in quotes, and describe its treatment (${profile.textTreatment.uppercase ? "uppercase" : "sentence case"}, heavy weight, high contrast).`
+    ? `THE IMAGE MODEL DRAWS THE HEADLINE ITSELF. Put the exact headline text in the prompt, in quotes, spelled character for character as given — a misspelling here is the one failure that makes the whole cover unusable.
+
+Letter it the way the REFERENCE COVERS attached to this request letter their headlines: same kind of typeface, same weight, same casing, same outline or shadow habit, same relationship to the picture (over the artwork, or on a block, or in a torn band). Do not invent a typographic style; read it off the references.
+
+What was measured from those covers: ${tt.uppercase ? "UPPERCASE" : "sentence case"}, roughly ${tt.wordCountBand} words, ${
+        tt.plate
+          ? `the headline sits on a solid ${tt.plateColor ?? "coloured"} block rather than directly on the picture`
+          : "the headline sits directly on the picture, with no block behind it"
+      }${tt.textColor ? `, letters in ${tt.textColor}` : ""}. Place it in the ${profile.composition.textZone.replace("-", " ")} area and keep the rest of that area clear so nothing collides with it.`
     : "The image must contain no text at all.";
 
   // The playbook, spelled out rather than left inside the JSON dump
@@ -1191,9 +1235,9 @@ ${brandLine}
 ${textLine}
 ${noteLine}
 
-${PROMPT_INSTRUCTIONS}
+${promptInstructions(input.modelRendersText)}
 
-Frame constraint for this run:
+Frame constraint for this run — this is guidance for YOU, never words to put in the prompt:
 ${ASPECT_INSTRUCTIONS[input.aspect ?? DEFAULT_ASPECT]}`,
   });
   const parsed = parseJsonObject(raw);

@@ -442,13 +442,28 @@ function drawHeadline(
     margin,
   });
 
-  // The banner is drawn first, edge to edge horizontally, because that
-  // is how channels that use one actually use it: a full-width strip,
-  // not a box hugging the words.
+  // The banner hugs the words rather than crossing the whole frame.
+  //
+  // It used to be drawn edge to edge, on the assumption that a channel
+  // using a banner uses a full-width strip. Vlad's crime channel says
+  // otherwise, and its own winners are the evidence: "162 IQ HITMAN"
+  // puts black type on a torn white block over the left half, "Black
+  // Devil" has no block at all, and only the newspaper-style cover runs
+  // a bar across the top — where the TEXT is that wide anyway. Hugging
+  // the block reproduces all three; a full-bleed strip reproduces one
+  // and paints over the artwork in the other two.
   if (spec.plate) {
-    const pad = fontSize * 0.28;
+    const padY = fontSize * 0.28;
+    const padX = fontSize * 0.42;
+    const widest = Math.max(...bestLines.map((l) => ctx.measureText(l).width), 0);
+    // Left edge of the type block, derived from where it is anchored —
+    // the same three cases zoneAnchor works in.
+    const blockLeft =
+      align === "left" ? x : align === "right" ? x - widest : x - widest / 2;
+    const plateLeft = Math.max(0, blockLeft - padX);
+    const plateRight = Math.min(width, blockLeft + widest + padX);
     ctx.fillStyle = spec.plateColor || "#D01B1B";
-    ctx.fillRect(0, y - pad, width, blockHeight + pad * 2);
+    ctx.fillRect(plateLeft, y - padY, plateRight - plateLeft, blockHeight + padY * 2);
   }
 
   ctx.textAlign = align;

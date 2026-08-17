@@ -236,8 +236,12 @@ type Spend = {
   images: number;
 };
 
-function fileUrl(rel: string): string {
-  return `/api/thumbnails/file/${rel.split("/").map(encodeURIComponent).join("/")}`;
+function fileUrl(rel: string, version?: string): string {
+  const url = `/api/thumbnails/file/${rel.split("/").map(encodeURIComponent).join("/")}`;
+  // `version` is only passed for files we rewrite in place; without it
+  // the URL stays byte-identical after an edit and the browser answers
+  // from its own cache instead of asking us.
+  return version ? `${url}?v=${encodeURIComponent(version)}` : url;
 }
 
 function fmtCompact(n: number): string {
@@ -1818,6 +1822,17 @@ function VariantCard({
   }
 
   const shown = showBase ? variant.base_path : variant.final_path ?? variant.base_path;
+  // The composited file is rewritten in place on every headline edit, so
+  // its URL has to change too or the browser shows what it already has
+  // and the edit looks like it did nothing. Keyed on the overlay spec
+  // because that is exactly what a re-render changes; the background
+  // never moves, so it keeps its plain, cacheable URL.
+  const overlayVersion = useMemo(() => {
+    const s = variant.overlay_json ?? "";
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }, [variant.overlay_json]);
 
   return (
     <div
@@ -1829,7 +1844,7 @@ function VariantCard({
       {shown && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={fileUrl(shown)}
+          src={fileUrl(shown, showBase ? undefined : overlayVersion)}
           alt={overlay?.text ?? "generated thumbnail"}
           className={cn(
             "rounded",

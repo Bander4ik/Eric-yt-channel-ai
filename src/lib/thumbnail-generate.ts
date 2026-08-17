@@ -78,6 +78,21 @@ export type RunGenerationInput = {
   reusePrompt?: string | null;
   overlayText?: string | null;
   zone?: TextZone | null;
+  /**
+   * Who letters the headline.
+   *
+   * "model" — the image model writes it, copying how this channel's own
+   * covers letter theirs. This is what makes a cover look like the
+   * channel rather than like this app, and it is the only way one
+   * product can serve a newspaper-style crime channel and a glossy
+   * science channel without hard-coding either.
+   *
+   * "overlay" — we draw it. One bundled font, always spelled right,
+   * re-editable for free forever.
+   *
+   * A script our font cannot render forces "model" whatever is asked.
+   */
+  headlineMode?: "model" | "overlay" | null;
   onProgress?: (p: {
     stage: string;
     done: number;
@@ -175,7 +190,16 @@ export async function runGeneration(
   const fontRel = getChannelFontPath(channelId);
   const fontAbs = fontRel ? path.join(DATA_DIR, fontRel) : null;
   const provisionalHeadline = input.overlayText?.trim() || title;
-  const modelRendersText = !fontCovers(provisionalHeadline, fontAbs);
+  // Two ways to end up with the model lettering the cover, and they are
+  // not the same thing. The first is forced: our font has no glyphs for
+  // this script, and drawing tofu boxes would be worse than asking the
+  // model. The second is chosen: the caller wants the headline to look
+  // like the channel's own, which our single bundled font can never do
+  // for every channel at once. Either way the compositor stands down,
+  // because drawing on top of a headline the model already wrote gives
+  // you two.
+  const modelRendersText =
+    !fontCovers(provisionalHeadline, fontAbs) || input.headlineMode === "model";
 
   report({ stage: "writing the prompt", done: 0, failed: 0 });
 

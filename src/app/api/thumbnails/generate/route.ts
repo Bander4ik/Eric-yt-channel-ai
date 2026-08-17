@@ -49,6 +49,7 @@ type Body = {
   overlayText?: unknown;
   zone?: unknown;
   formatIndex?: unknown;
+  headlineMode?: unknown;
 };
 
 const SOURCE_KINDS = ["idea", "signal", "video_remix", "manual"] as const;
@@ -199,6 +200,17 @@ export async function POST(req: Request) {
         overlayText:
           typeof body.overlayText === "string" ? body.overlayText : null,
         zone: body.zone !== undefined ? coerceZone(body.zone) : null,
+        // Default: the model letters it. Our own font is one look for
+        // every channel on the platform, and looking like the channel is
+        // the whole job. "overlay" asks for our compositor instead, and
+        // is the right choice when the headline must be edited later
+        // without paying for another image.
+        headlineMode:
+          body.headlineMode === "overlay"
+            ? "overlay"
+            : body.headlineMode === "model"
+              ? "model"
+              : "model",
         onProgress: (p) =>
           progressJob(key, {
             stage: p.stage,
