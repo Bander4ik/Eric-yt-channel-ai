@@ -31,6 +31,7 @@ export type CompetitorOpportunity = {
   similarity: number | null;
   recentOutlierCount: number;
   reason: string;
+  matchedCriteria: Array<"views30d" | "subscribers">;
   videos: OpportunityVideo[];
 };
 
@@ -342,11 +343,16 @@ export async function discoverOpportunities(
         hasRecentViews ? `300K+ views in 30 days` : null,
         hasTargetSubscriberCount ? `1K–100K subscribers` : null,
       ].filter((item): item is string => item !== null);
+      const matchedCriterionKeys: CompetitorOpportunity["matchedCriteria"] = [
+        ...(hasRecentViews ? (["views30d"] as const) : []),
+        ...(hasTargetSubscriberCount ? (["subscribers"] as const) : []),
+      ];
       const reason = matchedCriteria.join(" · ");
       opportunities.push({
         ...enrichedCandidate,
         recentOutlierCount: videos.length,
         reason,
+        matchedCriteria: matchedCriterionKeys,
         videos,
         // Keep demand ahead of raw similarity and subscriber count.
         // The value is intentionally internal; the UI uses labels only.

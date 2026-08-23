@@ -82,6 +82,7 @@ type Opportunity = {
   similarity: number | null;
   recentOutlierCount: number;
   reason: string;
+  matchedCriteria?: Array<"views30d" | "subscribers">;
   videos: OpportunityVideo[];
 };
 
@@ -1023,7 +1024,14 @@ function DiscoverySection({
   onHide: (channelId: string) => void;
   onAdd: (opportunity: Opportunity) => void;
 }) {
-  const visible = showMore ? opportunities : opportunities.slice(0, 10);
+  const [filter, setFilter] = useState<"all" | "views30d" | "subscribers">("all");
+  const filtered = opportunities.filter((opportunity) => {
+    if (filter === "all") return true;
+    return opportunity.matchedCriteria?.includes(filter) ?? opportunity.reason.includes(
+      filter === "views30d" ? "300K+" : "1K–100K"
+    );
+  });
+  const visible = showMore ? filtered : filtered.slice(0, 10);
   return (
     <Card className="border-primary/30 bg-primary/[0.02]">
       <CardContent className="space-y-4 p-4">
@@ -1043,15 +1051,45 @@ function DiscoverySection({
           </Button>
         </div>
 
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Opportunity filters">
+          {([
+            ["all", "All"],
+            ["views30d", "300K+ views"],
+            ["subscribers", "1K–100K subscribers"],
+          ] as const).map(([value, label]) => (
+            <Button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={filter === value}
+              variant={filter === value ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setFilter(value)}
+            >
+              {label}
+              {value !== "all" && (
+                <span className="ml-1 text-[10px] opacity-70">
+                  {opportunities.filter((opportunity) =>
+                    opportunity.matchedCriteria?.includes(value) ?? opportunity.reason.includes(value === "views30d" ? "300K+" : "1K–100K")
+                  ).length}
+                </span>
+              )}
+            </Button>
+          ))}
+        </div>
+
         {!configured && opportunities.length === 0 && (
           <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
             Add a NexLev API key in Settings to discover similar channels and recent outlier videos.
           </div>
         )}
 
-        {configured && opportunities.length === 0 && !loading && (
+        {configured && filtered.length === 0 && !loading && (
           <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-            No recent opportunities found. Try again later or check that your active channel has been indexed by NexLev.
+            {opportunities.length === 0
+              ? "No recent opportunities found. Try again later or check that your active channel has been indexed by NexLev."
+              : "No opportunities match this filter. Try another filter."}
           </div>
         )}
 
@@ -1069,10 +1107,10 @@ function DiscoverySection({
           </div>
         )}
 
-        {opportunities.length > 10 && !showMore && (
+        {filtered.length > 10 && !showMore && (
           <div className="flex justify-center">
             <Button variant="outline" size="sm" onClick={onShowMore}>
-              Show more ({opportunities.length - 10})
+              Show more ({filtered.length - 10})
             </Button>
           </div>
         )}
