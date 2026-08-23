@@ -17,6 +17,7 @@ const ALLOWED = [
   "apify",
   "youtube",
   "google_gemini",
+  "nexlev",
 ] as const;
 type Name = (typeof ALLOWED)[number];
 

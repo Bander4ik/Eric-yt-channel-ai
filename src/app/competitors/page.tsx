@@ -15,6 +15,7 @@ import {
   ExternalLink,
   X,
   Check,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,34 @@ type Gap = {
   competitorTotalViews: number;
   avgViews: number;
   exampleCompetitorTitle: string;
+};
+
+type OpportunityVideo = {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  views: number;
+  publishedAt: number;
+  outlierScore: number;
+  label: "Very strong" | "Strong" | "Above average";
+};
+
+type Opportunity = {
+  channelId: string;
+  title: string;
+  handle: string | null;
+  avatarUrl: string | null;
+  subscriberCount: number | null;
+  similarity: number | null;
+  recentOutlierCount: number;
+  reason: string;
+  videos: OpportunityVideo[];
+};
+
+type DiscoveryData = {
+  referenceChannelId: string;
+  fetchedAt: number;
+  opportunities: Opportunity[];
 };
 
 type Tab = "overview" | "gaps" | "alerts";
@@ -130,6 +159,11 @@ export default function CompetitorsPage() {
   const [syncJob, setSyncJob] = useState<SyncAllJob | null>(null);
   const [syncingIds, setSyncingIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryConfigured, setDiscoveryConfigured] = useState(false);
+  const [discoveryFetchedAt, setDiscoveryFetchedAt] = useState<number | null>(null);
+  const [showMoreOpportunities, setShowMoreOpportunities] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -176,6 +210,21 @@ export default function CompetitorsPage() {
     }
   }, []);
 
+  const refreshDiscovery = useCallback(async () => {
+    try {
+      const r = await fetch("/api/competitors/discovery", { cache: "no-store" });
+      const d = (await r.json()) as {
+        configured?: boolean;
+        data?: DiscoveryData | null;
+      };
+      setDiscoveryConfigured(!!d.configured);
+      setOpportunities(d.data?.opportunities ?? []);
+      setDiscoveryFetchedAt(d.data?.fetchedAt ?? null);
+    } catch {
+      /* Discovery is optional; tracked competitors should still load. */
+    }
+  }, []);
+
   useEffect(() => {
     refresh();
     refreshAlerts();
@@ -187,7 +236,8 @@ export default function CompetitorsPage() {
     // server never stopped working regardless of whether anyone was
     // watching.
     refreshSyncJob();
-  }, [refresh, refreshAlerts, refreshGaps, refreshSyncJob]);
+    refreshDiscovery();
+  }, [refresh, refreshAlerts, refreshGaps, refreshSyncJob, refreshDiscovery]);
 
   // While a bulk sync job is running, poll its GET every few seconds.
   // The server keeps working regardless of whether we're polling —
@@ -320,6 +370,61 @@ export default function CompetitorsPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "sync failed");
       await refreshSyncJob();
+    }
+  };
+
+  const findOpportunities = async () => {
+    setDiscoveryLoading(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/competitors/discovery", { method: "POST" });
+      const d = (await r.json().catch(() => ({}))) as {
+        error?: string;
+        data?: DiscoveryData;
+      };
+      if (!r.ok || !d.data) throw new Error(d.error ?? `Discovery failed (HTTP ${r.status})`);
+      setDiscoveryConfigured(true);
+      setOpportunities(d.data.opportunities);
+      setDiscoveryFetchedAt(d.data.fetchedAt);
+      setShowMoreOpportunities(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Discovery failed");
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
+
+  const hideOpportunity = async (channelId: string) => {
+    try {
+      const r = await fetch("/api/competitors/discovery/hide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId }),
+      });
+      const d = (await r.json().catch(() => ({}))) as { error?: string; data?: DiscoveryData };
+      if (!r.ok) throw new Error(d.error ?? `Hide failed (HTTP ${r.status})`);
+      setOpportunities(d.data?.opportunities ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Hide failed");
+    }
+  };
+
+  const addOpportunity = async (opportunity: Opportunity) => {
+    setError(null);
+    try {
+      const r = await fetch("/api/competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: opportunity.channelId }),
+      });
+      const d = (await r.json().catch(() => ({}))) as { error?: string; syncError?: string };
+      if (!r.ok && r.status !== 409) throw new Error(d.error ?? `Add failed (HTTP ${r.status})`);
+      if (d.syncError) setError(`Added, but first sync failed: ${d.syncError}`);
+      await refresh();
+      await refreshAlerts();
+      await refreshGaps();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Add competitor failed");
     }
   };
 
@@ -511,6 +616,26 @@ export default function CompetitorsPage() {
       {/* ===== OVERVIEW ===== */}
       {tab === "overview" && (
         <div className="space-y-4">
+          <DiscoverySection
+            opportunities={opportunities}
+            loading={discoveryLoading}
+            configured={discoveryConfigured}
+            fetchedAt={discoveryFetchedAt}
+            showMore={showMoreOpportunities}
+            trackedChannelIds={new Set(competitors.map((competitor) => competitor.channel_id).filter(Boolean) as string[])}
+            onFind={findOpportunities}
+            onShowMore={() => setShowMoreOpportunities(true)}
+            onHide={hideOpportunity}
+            onAdd={addOpportunity}
+          />
+          <div className="pt-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Tracked competitors
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Channels you already follow and sync manually.
+            </p>
+          </div>
           {/* KPI strip */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Kpi
@@ -872,6 +997,172 @@ function Kpi({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function DiscoverySection({
+  opportunities,
+  loading,
+  configured,
+  fetchedAt,
+  showMore,
+  trackedChannelIds,
+  onFind,
+  onShowMore,
+  onHide,
+  onAdd,
+}: {
+  opportunities: Opportunity[];
+  loading: boolean;
+  configured: boolean;
+  fetchedAt: number | null;
+  showMore: boolean;
+  trackedChannelIds: Set<string>;
+  onFind: () => void;
+  onShowMore: () => void;
+  onHide: (channelId: string) => void;
+  onAdd: (opportunity: Opportunity) => void;
+}) {
+  const visible = showMore ? opportunities : opportunities.slice(0, 10);
+  return (
+    <Card className="border-primary/30 bg-primary/[0.02]">
+      <CardContent className="space-y-4 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold">
+              <Sparkles className="h-4 w-4 text-primary" />
+              New opportunities
+            </h2>
+            <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+              Find new channels matching at least one signal: 300K+ views in the last 30 days or 1K–100K subscribers. Results use your currently selected own channel and NexLev data.
+            </p>
+          </div>
+          <Button onClick={onFind} disabled={loading} size="sm" className="gap-1.5">
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {loading ? "Finding…" : "Find new opportunities"}
+          </Button>
+        </div>
+
+        {!configured && opportunities.length === 0 && (
+          <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+            Add a NexLev API key in Settings to discover similar channels and recent outlier videos.
+          </div>
+        )}
+
+        {configured && opportunities.length === 0 && !loading && (
+          <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+            No recent opportunities found. Try again later or check that your active channel has been indexed by NexLev.
+          </div>
+        )}
+
+        {visible.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {visible.map((opportunity) => (
+              <OpportunityCard
+                key={opportunity.channelId}
+                opportunity={opportunity}
+                tracked={trackedChannelIds.has(opportunity.channelId)}
+                onAdd={() => onAdd(opportunity)}
+                onHide={() => onHide(opportunity.channelId)}
+              />
+            ))}
+          </div>
+        )}
+
+        {opportunities.length > 10 && !showMore && (
+          <div className="flex justify-center">
+            <Button variant="outline" size="sm" onClick={onShowMore}>
+              Show more ({opportunities.length - 10})
+            </Button>
+          </div>
+        )}
+
+        {fetchedAt && (
+          <p className="text-[11px] text-muted-foreground">Last refreshed {fmtRelative(fetchedAt)}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OpportunityCard({
+  opportunity,
+  tracked,
+  onAdd,
+  onHide,
+}: {
+  opportunity: Opportunity;
+  tracked: boolean;
+  onAdd: () => void;
+  onHide: () => void;
+}) {
+  const initial = opportunity.title.slice(0, 1).toUpperCase();
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <div className="flex items-start gap-3">
+        <a
+          href={`https://www.youtube.com/channel/${opportunity.channelId}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Open ${opportunity.title} on YouTube`}
+          title="Open channel on YouTube"
+          className="shrink-0 rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          {opportunity.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={opportunity.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
+              {initial}
+            </div>
+          )}
+        </a>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{opportunity.title}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {opportunity.handle ?? opportunity.channelId}
+            {opportunity.subscriberCount !== null && ` · ${fmtCount(opportunity.subscriberCount)} subs`}
+          </div>
+          <div className="mt-2 rounded-md bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Matched because:</span> {opportunity.reason}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {opportunity.videos.map((video) => (
+          <a
+            key={video.videoId}
+            href={`https://www.youtube.com/watch?v=${video.videoId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 rounded-md border border-border/70 p-2 transition-colors hover:bg-accent"
+          >
+            {video.thumbnailUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={video.thumbnailUrl} alt="" className="h-12 w-20 shrink-0 rounded object-cover" referrerPolicy="no-referrer" />
+            )}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium">{video.title}</span>
+              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+                <span>{fmtCount(video.views)} views</span>
+                <span className="font-medium text-primary">{video.label}</span>
+              </span>
+            </span>
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </a>
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onHide} className="h-7 text-xs text-muted-foreground">
+          Hide
+        </Button>
+        <Button size="sm" onClick={onAdd} disabled={tracked} className="h-7 text-xs">
+          {tracked ? "Already tracked" : "Add competitor"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

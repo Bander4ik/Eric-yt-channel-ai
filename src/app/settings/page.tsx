@@ -14,7 +14,7 @@ import { YouTubeCookies } from "@/components/youtube-cookies";
 import { GoogleOAuthConnector } from "@/components/google-oauth-connector";
 import { ImageProviderSettings } from "@/components/image-provider-settings";
 
-type Name = "claude" | "deepgram" | "apify" | "youtube" | "google_gemini";
+type Name = "claude" | "deepgram" | "apify" | "youtube" | "google_gemini" | "nexlev";
 
 type StatusMap = Record<
   Name,
@@ -164,6 +164,22 @@ export default function SettingsPage() {
         linkLabel: t.integrations.apify.helpLinkLabel,
       },
     },
+    nexlev: {
+      name: "nexlev",
+      label: "NexLev",
+      desc: "Optional. Finds similar channels and recent outlier videos for the active channel in Research → Competitors.",
+      placeholder: "Paste your NexLev API key…",
+      help: {
+        title: "How to get a NexLev API key",
+        steps: [
+          "Open the NexLev dashboard and create an API key.",
+          "Paste the key here and click Save.",
+          "Open Research → Competitors and click Find new opportunities.",
+        ],
+        link: "https://dashboard.nexlev.io/nexlev-api/create-api-key",
+        linkLabel: "Open NexLev API keys",
+      },
+    },
   };
 
   return (
@@ -272,6 +288,11 @@ export default function SettingsPage() {
               item={items.apify}
               status={status?.apify}
               onSave={(v) => saveIntegration("apify", v)}
+            />
+            <KeyRow
+              item={items.nexlev}
+              status={status?.nexlev}
+              onSave={(v) => saveIntegration("nexlev", v)}
             />
             <YouTubeCookies />
             <div className="pt-1">
