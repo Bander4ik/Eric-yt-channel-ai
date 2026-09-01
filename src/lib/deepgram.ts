@@ -1,5 +1,5 @@
 import "server-only";
-import youtubeDl from "youtube-dl-exec";
+import youtubeDl, { ytDlpPath } from "./yt-dlp";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,7 +10,7 @@ import { getSetting } from "./db";
  * Cloud-only Deepgram transcription for YouTube videos.
  *
  * Flow:
- *   1. yt-dlp (invoked via youtube-dl-exec) resolves a YouTube videoId →
+ *   1. yt-dlp (invoked via our ./yt-dlp wrapper) resolves a YouTube videoId →
  *      signed audio stream URL on googlevideo.com. We only request JSON
  *      metadata (--skip-download / --dump-single-json) — the audio bytes
  *      never touch disk.
@@ -19,7 +19,7 @@ import { getSetting } from "./db";
  *      text.
  *
  * Nothing stays on the user's disk beyond a few KB of JSON. The yt-dlp
- * binary itself (~20MB) is shipped with the youtube-dl-exec package and
+ * binary itself (~37MB) is downloaded on first use into DATA_DIR/bin and
  * installed into node_modules at npm-install time.
  *
  * Why yt-dlp and not a pure-JS library: the JS ports (@distube/ytdl-core,
@@ -145,7 +145,7 @@ export function ytDlpCommonFlags(
   return {
     noWarnings: true,
     noCheckCertificates: true,
-    // youtube-dl-exec serialises this into `--extractor-args
+    // The wrapper serialises this into `--extractor-args
     // "youtube:player_client=tv_embedded,ios,android,web"`. yt-dlp
     // walks the list in order, so a bot-blocked default `web` client
     // simply gets skipped over.
@@ -227,7 +227,7 @@ export async function resolveAudioUrl(videoId: string): Promise<{
     if (stdout.trim() && stdout.length < 300) parts.push(`stdout: ${stdout.slice(0, 200)}`);
     const detail = parts.join(" | ") || "(yt-dlp threw with no message/stderr — binary may be missing or blocked)";
     throw new AudioUrlError(
-      `yt-dlp failed for ${videoId}: ${detail}. If this persists, update youtube-dl-exec or paste a YouTube cookies.txt under Settings → YouTube cookies.`
+      `yt-dlp failed for ${videoId}: ${detail}. If this persists, delete the yt-dlp file in your data folder so a fresh copy downloads, or paste a YouTube cookies.txt under Settings → YouTube cookies.`
     );
   } finally {
     cookies?.cleanup();
@@ -287,6 +287,10 @@ async function runYtDlpToBuffer(
   signal: AbortSignal | undefined,
   videoId: string
 ): Promise<{ buffer: Buffer; totalBytes: number }> {
+  // The binary downloads on first use; exec() below needs it already on
+  // disk (see the note in ./yt-dlp on why exec is synchronous).
+  await ytDlpPath();
+
   const subprocess = youtubeDl.exec(
     ytUrl,
     ytdlpOptions,

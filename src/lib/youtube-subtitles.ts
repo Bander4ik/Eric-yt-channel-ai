@@ -1,5 +1,5 @@
 import "server-only";
-import youtubeDl from "youtube-dl-exec";
+import youtubeDl from "./yt-dlp";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -23,7 +23,8 @@ import { maybeWriteCookiesTempFile, ytDlpCommonFlags } from "./deepgram";
  * rights problem there — but we also can't afford to Deepgram 50
  * competitor videos per sync).
  *
- * yt-dlp is already a dependency (`youtube-dl-exec`) and already used by
+ * yt-dlp is run through our own `./yt-dlp` wrapper (see the note there on
+ * why the `youtube-dl-exec` package had to go), and is already used by
  * deepgram.ts for audio; we deliberately reuse its `ytDlpCommonFlags()`
  * and cookies handling rather than growing a second way to invoke it.
  */
@@ -339,7 +340,7 @@ export async function fetchSubtitleText(
         writeAutoSub: true,
         subFormat: "vtt",
         // `--sub-lang` is yt-dlp's accepted alias for `--sub-langs`; it is
-        // the spelling youtube-dl-exec's flag types know about. Verified
+        // the spelling the wrapper's flag serialiser produces. Verified
         // against the shipped yt-dlp binary (2026.06.09).
         subLang: track.key,
         output: path.join(tmpDir, "%(id)s.%(ext)s"),
