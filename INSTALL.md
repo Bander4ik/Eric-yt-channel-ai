@@ -23,6 +23,8 @@ You need **one** program installed before the app will run: Node.js. That's it.
 **Verify it worked** (optional but recommended):
 
 - **Windows**: press the **Windows key**, type `cmd`, hit Enter. A black window opens. Type `node -v` and press Enter. You should see something like `v20.18.0`. If yes — done. If you get "command not found", reboot your computer and try again.
+
+> **Take the LTS version, not the newest one.** The app's database engine ships ready-made builds for Node 20 through 25. On Node 26 or newer it has to be compiled on your machine instead, which is a common cause of a failed install. The green LTS button gives you the right one.
 - **macOS**: open **Terminal** (press ⌘+Space, type `Terminal`, hit Enter). Type `node -v` and press Enter. Same expected output.
 
 ### 1.2 (Windows only) Install "Visual Studio Build Tools" — recommended before you install
@@ -36,16 +38,11 @@ The app's database engine is not plain code — it's partly written in a lower-l
 
 If you'd rather skip this for now: it's fine, just come back here if `install.bat` later fails and mentions the database engine or a compiler.
 
-### 1.3 (Windows only) Install Python 3 — optional, secondary fallback
+### 1.3 Python — you do not need it
 
-The transcription engine ships a small helper that may occasionally need Python during install. This is a much rarer cause of install failures than the Build Tools above — most Windows install failures are fixed by 1.2, not this step. If you skip this and the install fails with a message specifically about Python, come back here.
+You may have read older instructions telling you to install Python. You don't, and it doesn't matter whether you use the installer or type `npm install` yourself.
 
-1. Open the Microsoft Store.
-2. Search for `Python 3.12`.
-3. Click **Get** / **Install**. (It's free.)
-4. Done. No configuration needed.
-
-(macOS already ships with Python.)
+Older versions pulled in a component that refused to install without Python, and then downloaded its engine through a GitHub address that many networks block. Both ran during installation, so a problem with an optional feature — reading video transcripts — could stop the whole app from installing. That component is gone. The transcript engine now downloads by itself the first time you actually ask for a transcript, and if your network blocks it, everything else in the app still works.
 
 ---
 
@@ -114,11 +111,15 @@ This downloads everything the app needs (~300 MB of code libraries). It takes **
   - In the popup, click **Open**.
   - macOS remembers your choice; next time it'll just open.
 
-> **If install fails**: every run now writes a file called `install-log.txt` in the project folder — the fastest way to get help is to send us that one file, no screenshots needed. Beyond that, in priority order:
-> - **Send `install-log.txt` to your developer.** It contains the full details the terminal window can't show you all at once.
-> - **(Windows) Install "Visual Studio Build Tools"** with the "Desktop development with C++" workload — see step 1.2. This is the #1 cause of a failed Windows install (the database engine needs it to compile).
+> **If install fails**: the installer now reads its own log and prints the likely cause on screen before it stops — read that box first, it is usually the whole answer. Every run also writes `install-log.txt` in the project folder; sending us that one file is the fastest way to get help, no screenshots needed.
+>
+> - **anything about `better-sqlite3`, `node-gyp`, MSB or a compiler** → this is the database engine, and **Python will not fix it**. On Windows install "Visual Studio Build Tools" with the "Desktop development with C++" workload (step 1.2); on macOS run `xcode-select --install`. Then delete `node_modules` and run the installer again.
+> - **"youtube-dl-exec needs Python"** or a timeout on `api.github.com` → you are on an old version. Download the current one; that component was removed precisely because it broke installs.
+>
+> Other causes, in order of how often we see them:
+> - **"EPERM"** → a cloud sync service (OneDrive, Dropbox, Google Drive) is holding the files. Move the project somewhere local and reinstall.
+> - **Node.js newer than 25** → the database engine has no ready-made build for it and tries to compile. Install the LTS version from step 1.1 instead.
 > - **Delete the `node_modules` folder** if it exists, then re-run `install.bat` / `install.command`.
-> - **Python** (step 1.3) is only a secondary, much less common cause — try it after the steps above, not before.
 > - "Node.js not found" → go back to step 1.1.
 > - "EACCES permission denied" (macOS) → run `sudo chmod +x install.command start.command` in Terminal, from the project folder, then double-click again.
 
