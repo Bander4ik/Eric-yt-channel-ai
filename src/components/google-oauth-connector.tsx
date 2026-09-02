@@ -43,6 +43,17 @@ type ConfigInfo = {
 export function GoogleOAuthConnector() {
   const { t } = useI18n();
   const [status, setStatus] = useState<Status | null>(null);
+  // The redirect URI Google must be told about is whatever origin this page
+  // is actually served from. Hardcoding :3000 sent anyone who moved the app
+  // to another port (port.txt) into a redirect_uri_mismatch with no clue why.
+  const [redirectUri, setRedirectUri] = useState(
+    "http://localhost:3000/api/youtube/oauth/callback"
+  );
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setRedirectUri(`${window.location.origin}/api/youtube/oauth/callback`);
+    }
+  }, []);
   const [cfg, setCfg] = useState<ConfigInfo | null>(null);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -183,7 +194,7 @@ export function GoogleOAuthConnector() {
             <li>
               {t.googleOAuth.howStep3}{" "}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
-                http://localhost:3000/api/youtube/oauth/callback
+                {redirectUri}
               </code>
             </li>
             <li>{t.googleOAuth.howStep4}</li>

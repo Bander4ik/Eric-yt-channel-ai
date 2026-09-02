@@ -57,16 +57,32 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM Check the port BEFORE starting. Without this, a busy 3000 produces the
+REM Which port? Default 3000. A client running another local app on 3000
+REM (our own faceless-video generator is the usual one) puts a single number
+REM in a file called port.txt next to this script - no commands, no editing
+REM of scripts. The same number is used for the busy-port check, the browser
+REM and the server, so they can never disagree.
+set "PORT=3000"
+if exist "port.txt" (
+  set /p PORT=<"port.txt"
+)
+REM Strip stray spaces; anything that is not a plain number falls back to 3000.
+set "PORT=%PORT: =%"
+echo %PORT%| findstr /R /X "[0-9][0-9]*" >nul || (
+  echo [WARN] port.txt does not contain a plain number - using 3000.
+  set "PORT=3000"
+)
+
+REM Check the port BEFORE starting. Without this, a busy port produces the
 REM most confusing failure this app has: Next does not stop, it quietly moves
 REM to 3001, while the browser we launch still opens 3000 - so the client
 REM either sees "refused to connect" or, worse, a different program that owns
 REM 3000 and thinks it is ours.
-netstat -ano | findstr /R /C:":3000 .*LISTENING" >nul 2>nul
+netstat -ano | findstr /R /C:":%PORT% .*LISTENING" >nul 2>nul
 if not errorlevel 1 (
   echo.
   echo ====================================================
-  echo  [ERROR] Port 3000 is already in use.
+  echo  [ERROR] Port %PORT% is already in use.
   echo ====================================================
   echo.
   echo Another program on this computer is using the address this app
@@ -74,8 +90,10 @@ if not errorlevel 1 (
   echo running in another window.
   echo.
   echo   1. Close any other window running this app.
-  echo   2. If you cannot find one, restart your computer.
-  echo   3. Then run start.bat again.
+  echo   2. If it is a DIFFERENT app you need running at the same time,
+  echo      create a file called port.txt next to start.bat containing
+  echo      just a number, for example 3001, and run start.bat again.
+  echo   3. If you cannot find what is using it, restart your computer.
   echo.
   pause
   exit /b 1
@@ -83,7 +101,7 @@ if not errorlevel 1 (
 
 echo.
 echo ====================================
-echo  Starting YouTube Channel AI VIP...
+echo  Starting YouTube Channel AI VIP on port %PORT%...
 echo  The app will open in your browser.
 echo  Close this window to stop the server.
 echo ====================================
@@ -95,11 +113,11 @@ REM "localhost refused to connect" whenever the server died during startup,
 REM which told the client nothing about the real error printed right here.
 REM (Nested `cmd /c "... start \"\" \"...\""` blew up historically with `\\`
 REM read as a UNC root, hence PowerShell.)
-start "" /b powershell -NoProfile -WindowStyle Hidden -Command "for ($i=0; $i -lt 40; $i++) { Start-Sleep -Milliseconds 750; try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Uri 'http://localhost:3000' | Out-Null; Start-Process 'http://localhost:3000'; break } catch { } }"
+start "" /b powershell -NoProfile -WindowStyle Hidden -Command "for ($i=0; $i -lt 40; $i++) { Start-Sleep -Milliseconds 750; try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Uri 'http://localhost:%PORT%' | Out-Null; Start-Process 'http://localhost:%PORT%'; break } catch { } }"
 
 REM An explicit port, so the address we opened is the address the server is
 REM on - `next dev` with no port is free to move elsewhere.
-call npm run dev -- -p 3000
+call npm run dev -- -p %PORT%
 
 REM If we get here the server stopped. When that is a crash rather than the
 REM user closing the window, keep the error on screen instead of vanishing.
@@ -112,8 +130,8 @@ if errorlevel 1 (
   echo The lines above this box are the reason. Screenshot them and send
   echo them to your developer.
   echo.
-  echo If it says "port 3000 is already in use", another program is using
-  echo that address - restart your computer and try again.
+  echo If it says the port is already in use, another program is using
+  echo that address - see port.txt in the instructions, or restart.
   echo.
   pause
 )

@@ -217,7 +217,7 @@ This is what lets the app pull real Analytics data (views over time, retention, 
      ```
      http://localhost:3000/api/youtube/oauth/callback
      ```
-     No trailing slash. Must be `http://` (not `https://`) because this is local.
+     No trailing slash. Must be `http://` (not `https://`) because this is local. If you run the app on a different port via `port.txt`, use that port here instead — the Integrations page inside the app shows the exact line for your setup.
    - **Create**.
    - The popup shows **Client ID** and **Client secret** → copy both.
 4. In the app: **Integrations** → scroll to **YouTube Analytics (Google OAuth)** → paste **Client ID** and **Client secret** → **Save**.
@@ -336,13 +336,16 @@ How you update depends on which option you used in Part 2.
 
 ### "Port 3000 is already in use."
 
-Another app is using port 3000. Either:
-- Quit the other app, OR
-- Start this one on a different port: open Terminal in the project folder, run `npm run dev -- -p 3001` (use any port 3000–9999). Then open `http://localhost:3001` instead.
+Another app on your computer is using port 3000 — very often our faceless-video generator, which also lives there. You have two options:
 
-### "yt-dlp binary not found" (when transcribing)
+- **Quit the other app** before starting this one, OR
+- **Run this app on its own port**, so both can run at the same time. Create a plain text file called `port.txt` in the project folder (next to `start.bat` / `start.command`) containing just a number, for example `3001`. Save it and double-click the launcher again — it will start on that port and open the browser there by itself.
 
-The transcription engine couldn't find its helper binary. Re-run `install.bat` / `install.command` — that re-downloads it.
+If you use Google login (Part 4) and changed the port, add the new address to Google as well: in the Google Cloud credentials page, add a second redirect URI with your port, e.g. `http://localhost:3001/api/youtube/oauth/callback`. The Integrations page inside the app shows the exact line to paste.
+
+### "Could not download the transcript engine" (when transcribing)
+
+Transcripts need a small helper program (yt-dlp) that the app downloads by itself the first time you ask for a transcript — about 20–40 MB from github.com. If that download fails, everything else in the app keeps working; only transcripts are unavailable. Usually it just means the internet was flaky at that moment — try the transcript again. If your network blocks github.com entirely, the error message tells you where to put a manually downloaded copy.
 
 ### "Access blocked: app has not completed verification" (Google OAuth)
 

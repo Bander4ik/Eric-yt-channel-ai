@@ -53,15 +53,29 @@ if ! node -e "require('better-sqlite3')" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Check the port BEFORE starting. Without this, a busy 3000 produces the
+# Which port? Default 3000. A client running another local app on 3000 (our
+# own faceless-video generator is the usual one) puts a single number in a
+# file called port.txt next to this script - no commands, no editing of
+# scripts. The same number drives the busy-port check, the browser and the
+# server, so they can never disagree.
+PORT=3000
+if [ -f "port.txt" ]; then
+  CANDIDATE="$(tr -d '[:space:]' < port.txt)"
+  case "$CANDIDATE" in
+    ''|*[!0-9]*) echo "[WARN] port.txt does not contain a plain number - using 3000." ;;
+    *) PORT="$CANDIDATE" ;;
+  esac
+fi
+
+# Check the port BEFORE starting. Without this, a busy port produces the
 # most confusing failure this app has: Next does not stop, it quietly moves
 # to 3001, while the browser we launch still opens 3000 - so the client
 # either sees "refused to connect" or, worse, a different program that owns
 # 3000 and believes it is ours.
-if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:3000 -sTCP:LISTEN >/dev/null 2>&1; then
+if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo
   echo "===================================================="
-  echo " [ERROR] Port 3000 is already in use."
+  echo " [ERROR] Port $PORT is already in use."
   echo "===================================================="
   echo
   echo "Another program on this Mac is using the address this app needs."
@@ -69,8 +83,10 @@ if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:3000 -sTCP:LISTEN >/dev/nul
   echo "another Terminal window."
   echo
   echo "  1. Close any other window running this app."
-  echo "  2. If you cannot find one, restart your Mac."
-  echo "  3. Then run start.command again."
+  echo "  2. If it is a DIFFERENT app you need running at the same time,"
+  echo "     create a file called port.txt next to start.command containing"
+  echo "     just a number, for example 3001, and run start.command again."
+  echo "  3. If you cannot find what is using it, restart your Mac."
   echo
   read -n 1 -s -r -p "Press any key to exit..." || true
   exit 1
@@ -78,7 +94,7 @@ fi
 
 echo
 echo "===================================="
-echo "  Starting YouTube Channel AI VIP..."
+echo "  Starting YouTube Channel AI VIP on port $PORT..."
 echo "  The app will open in your browser."
 echo "  Close this window to stop the server."
 echo "===================================="
@@ -86,7 +102,7 @@ echo
 
 # An explicit port, so the address we open is the address the server is on -
 # `next dev` with no port is free to move elsewhere.
-npm run dev -- -p 3000 &
+npm run dev -- -p "$PORT" &
 DEV_PID=$!
 
 # Open the browser only once the server actually answers, and only while it
@@ -97,11 +113,11 @@ DEV_PID=$!
   for _ in $(seq 1 40); do
     sleep 0.75
     kill -0 "$DEV_PID" 2>/dev/null || exit 0
-    if curl -sf -o /dev/null --max-time 2 "http://localhost:3000" 2>/dev/null; then
+    if curl -sf -o /dev/null --max-time 2 "http://localhost:$PORT" 2>/dev/null; then
       if command -v open >/dev/null 2>&1; then
-        open "http://localhost:3000"
+        open "http://localhost:$PORT"
       elif command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "http://localhost:3000"
+        xdg-open "http://localhost:$PORT"
       fi
       exit 0
     fi
@@ -122,8 +138,8 @@ if [ "$DEV_STATUS" -ne 0 ]; then
   echo "The lines above this box are the reason. Screenshot them and send"
   echo "them to your developer."
   echo
-  echo "If it says \"port 3000 is already in use\", another program is using"
-  echo "that address - restart your computer and try again."
+  echo "If it says the port is already in use, another program is using"
+  echo "that address - see port.txt in the instructions, or restart."
   echo
   read -n 1 -s -r -p "Press any key to exit..." || true
 fi

@@ -277,6 +277,8 @@ Check that `~/.youtube-channel-ai-vip/app.db` exists and isn't tiny (it should b
 
 You have another `start.bat` running somewhere, or another app is using that port. Look for any extra black terminal windows on your taskbar and close them. If that doesn't help, restart your computer — that always frees the port.
 
+If it is a different app you genuinely need running at the same time (our faceless-video generator also uses 3000), create a text file called `port.txt` next to `start.bat` containing just a number such as `3001`. The launcher will use that port from then on. If you use Google login, add the matching redirect URI in Google Cloud too — the Integrations page shows the exact line.
+
 ---
 
 ## Summary card (keep this handy)
