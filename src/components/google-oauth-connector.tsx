@@ -44,10 +44,10 @@ export function GoogleOAuthConnector() {
   const { t } = useI18n();
   const [status, setStatus] = useState<Status | null>(null);
   // The redirect URI Google must be told about is whatever origin this page
-  // is actually served from. Hardcoding :3000 sent anyone who moved the app
+  // is actually served from. Hardcoding a port sent anyone who moved the app
   // to another port (port.txt) into a redirect_uri_mismatch with no clue why.
   const [redirectUri, setRedirectUri] = useState(
-    "http://localhost:3000/api/youtube/oauth/callback"
+    "http://localhost:3010/api/youtube/oauth/callback"
   );
   useEffect(() => {
     if (typeof window !== "undefined") {

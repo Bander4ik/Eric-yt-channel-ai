@@ -53,25 +53,26 @@ if ! node -e "require('better-sqlite3')" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Which port? Default 3000. A client running another local app on 3000 (our
-# own faceless-video generator is the usual one) puts a single number in a
+# Which port? Default 3010 - deliberately not 3000, because every client also
+# runs our faceless-video generator and that one lives on 3000. A client who
+# needs yet another port puts a single number in a
 # file called port.txt next to this script - no commands, no editing of
 # scripts. The same number drives the busy-port check, the browser and the
 # server, so they can never disagree.
-PORT=3000
+PORT=3010
 if [ -f "port.txt" ]; then
   CANDIDATE="$(tr -d '[:space:]' < port.txt)"
   case "$CANDIDATE" in
-    ''|*[!0-9]*) echo "[WARN] port.txt does not contain a plain number - using 3000." ;;
+    ''|*[!0-9]*) echo "[WARN] port.txt does not contain a plain number - using 3010." ;;
     *) PORT="$CANDIDATE" ;;
   esac
 fi
 
 # Check the port BEFORE starting. Without this, a busy port produces the
 # most confusing failure this app has: Next does not stop, it quietly moves
-# to 3001, while the browser we launch still opens 3000 - so the client
+# to the next free one, while the browser we launch still opens ours - so the client
 # either sees "refused to connect" or, worse, a different program that owns
-# 3000 and believes it is ours.
+# that port and believes it is ours.
 if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo
   echo "===================================================="

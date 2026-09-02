@@ -21,12 +21,12 @@ Full step-by-step setup for someone who has never worked with code is in **[INST
 1. Install Node.js 20+ from [nodejs.org](https://nodejs.org/)
 2. Download this repo — either as a ZIP from the green **Code** button above, or `git clone https://github.com/YT-Wizards/YouTube-Channel-AI-VIP.git`
 3. Run `install.bat` (Windows) or `install.command` (macOS) — installs dependencies
-4. Run `start.bat` (Windows) or `start.command` (macOS) — opens the app in your browser at `http://localhost:3000`
+4. Run `start.bat` (Windows) or `start.command` (macOS) — opens the app in your browser at `http://localhost:3010`
 5. Open **Integrations** and add your keys (minimum: Claude + Deepgram)
 
 ## What it does
 
-A web dashboard (opens in your browser at `localhost:3000`) that connects to:
+A web dashboard (opens in your browser at `localhost:3010`) that connects to:
 
 - **Claude (Anthropic)** — AI analysis and chat about your channel (required)
 - **Deepgram** — local video transcription (≈$0.0043/min)

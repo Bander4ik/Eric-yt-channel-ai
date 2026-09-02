@@ -57,27 +57,28 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM Which port? Default 3000. A client running another local app on 3000
-REM (our own faceless-video generator is the usual one) puts a single number
+REM Which port? Default 3010 - deliberately not 3000, because every client
+REM also runs our faceless-video generator and that one lives on 3000. A
+REM client who needs yet another port puts a single number
 REM in a file called port.txt next to this script - no commands, no editing
 REM of scripts. The same number is used for the busy-port check, the browser
 REM and the server, so they can never disagree.
-set "PORT=3000"
+set "PORT=3010"
 if exist "port.txt" (
   set /p PORT=<"port.txt"
 )
-REM Strip stray spaces; anything that is not a plain number falls back to 3000.
+REM Strip stray spaces; anything that is not a plain number falls back to 3010.
 set "PORT=%PORT: =%"
 echo %PORT%| findstr /R /X "[0-9][0-9]*" >nul || (
-  echo [WARN] port.txt does not contain a plain number - using 3000.
-  set "PORT=3000"
+  echo [WARN] port.txt does not contain a plain number - using 3010.
+  set "PORT=3010"
 )
 
 REM Check the port BEFORE starting. Without this, a busy port produces the
 REM most confusing failure this app has: Next does not stop, it quietly moves
-REM to 3001, while the browser we launch still opens 3000 - so the client
+REM to the next free one, while the browser we launch still opens ours - so the client
 REM either sees "refused to connect" or, worse, a different program that owns
-REM 3000 and thinks it is ours.
+REM that port and thinks it is ours.
 netstat -ano | findstr /R /C:":%PORT% .*LISTENING" >nul 2>nul
 if not errorlevel 1 (
   echo.

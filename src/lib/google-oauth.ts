@@ -9,7 +9,7 @@ import { getSetting, setSetting } from "./db";
  * dance against their own project. Refresh tokens persist in local SQLite.
  *
  * Redirect URI MUST be: http://localhost:<port>/api/youtube/oauth/callback
- * (3000 unless the client set another port in port.txt — the origin is
+ * (3010 unless the client set another port in port.txt — the origin is
  * taken from the request, so it follows whatever port the app runs on)
  * The user must register this exact URI in their GCP OAuth client config.
  */

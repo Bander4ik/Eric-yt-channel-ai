@@ -17,6 +17,8 @@ If you already deleted an old project folder and your data went with it, don't s
 
 ---
 
+> **Heads-up for this update: the app now opens at `http://localhost:3010`, not 3000.** We moved it so it never collides with the faceless-video generator, which uses 3000. Your channels, keys and data are untouched. One thing to do **only if you connected Google login**: open the Google Cloud credentials page, add `http://localhost:3010/api/youtube/oauth/callback` as a second redirect URI (keep the old one), and click *Reconnect* on the Integrations page. Until then, analytics keeps working on the token you already have — only a fresh connection would fail.
+
 ## Before you start — fix the OneDrive problem (if it applies to you)
 
 Open the folder where your project currently lives. **If the path contains `OneDrive`, `iCloud Drive`, `Dropbox`, or `Google Drive`** — you need to move it before doing anything else.
@@ -110,10 +112,10 @@ Typical time: 30 seconds to 2 minutes.
 2. A new black terminal window opens. After 5-10 seconds you'll see lines like:
    ```
    ▲ Next.js 16.2.4
-   - Local:        http://localhost:3000
+   - Local:        http://localhost:3010
    ✓ Ready in 283ms
    ```
-3. Your browser should automatically open to `http://localhost:3000`. If it doesn't, open your browser yourself and go to that address.
+3. Your browser should automatically open to `http://localhost:3010`. If it doesn't, open your browser yourself and go to that address.
 
 ### Step 8. Hard-refresh your browser (CRITICAL)
 
@@ -273,11 +275,11 @@ Don't re-enter anything yet — your data is almost certainly still there. In or
 
 Check that `~/.youtube-channel-ai-vip/app.db` exists and isn't tiny (it should be megabytes, not kilobytes). If it's there, nothing is lost — message the developer with a screenshot rather than starting over.
 
-### "Port 3000 is already in use" (or "EADDRINUSE")
+### "Port 3010 is already in use" (or "EADDRINUSE")
 
 You have another `start.bat` running somewhere, or another app is using that port. Look for any extra black terminal windows on your taskbar and close them. If that doesn't help, restart your computer — that always frees the port.
 
-If it is a different app you genuinely need running at the same time (our faceless-video generator also uses 3000), create a text file called `port.txt` next to `start.bat` containing just a number such as `3001`. The launcher will use that port from then on. If you use Google login, add the matching redirect URI in Google Cloud too — the Integrations page shows the exact line.
+If it is a different app you genuinely need running at the same time, create a text file called `port.txt` next to `start.bat` containing just a number such as `3001`. The launcher will use that port from then on. If you use Google login, add the matching redirect URI in Google Cloud too — the Integrations page shows the exact line.
 
 ---
 

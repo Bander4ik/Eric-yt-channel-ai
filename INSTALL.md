@@ -4,7 +4,7 @@ This guide is written for someone who has **never written code, never used GitHu
 
 If anything looks weird or you get stuck, take a screenshot and send it to the developer. Don't guess — most steps are reversible, but a wrong API key in the wrong field is annoying to debug.
 
-> **Quick mental model.** This is an app that runs **on your own computer**, not on the internet. You start it like Photoshop or Chrome — there's an icon you double-click, a window opens, you use it, you close it. The "website" you'll see at `http://localhost:3000` is served from your own machine. Nothing leaves your laptop unless you explicitly send it to an external API (like Claude).
+> **Quick mental model.** This is an app that runs **on your own computer**, not on the internet. You start it like Photoshop or Chrome — there's an icon you double-click, a window opens, you use it, you close it. The "website" you'll see at `http://localhost:3010` is served from your own machine. Nothing leaves your laptop unless you explicitly send it to an external API (like Claude).
 
 ---
 
@@ -132,11 +132,11 @@ A terminal window opens. After ~5–10 seconds you'll see lines like:
 
 ```
 ▲ Next.js 16.2.4
-- Local:        http://localhost:3000
+- Local:        http://localhost:3010
 ✓ Ready in 2.1s
 ```
 
-Your default browser should automatically open `http://localhost:3000`. If it doesn't, open your browser yourself and type `http://localhost:3000` in the address bar.
+Your default browser should automatically open `http://localhost:3010`. If it doesn't, open your browser yourself and type `http://localhost:3010` in the address bar.
 
 You should see the app's dashboard. It'll be empty (no channels yet) — that's expected.
 
@@ -148,7 +148,7 @@ You should see the app's dashboard. It'll be empty (no channels yet) — that's 
 
 The app needs API keys for the external services it talks to. Every key is stored **locally in `~/.youtube-channel-ai-vip/app.db`** — in your home folder, never uploaded anywhere. You enter each one once and forget about it.
 
-Open the running app (`http://localhost:3000`) and click **Integrations** in the left sidebar.
+Open the running app (`http://localhost:3010`) and click **Integrations** in the left sidebar.
 
 ### 4.1 Claude (Anthropic) — REQUIRED
 
@@ -215,7 +215,7 @@ This is what lets the app pull real Analytics data (views over time, retention, 
    - **Name**: `youtube-channel-ai-vip`.
    - **Authorized redirect URIs** → **Add URI** → paste **exactly**:
      ```
-     http://localhost:3000/api/youtube/oauth/callback
+     http://localhost:3010/api/youtube/oauth/callback
      ```
      No trailing slash. Must be `http://` (not `https://`) because this is local. If you run the app on a different port via `port.txt`, use that port here instead — the Integrations page inside the app shows the exact line for your setup.
    - **Create**.
@@ -319,7 +319,7 @@ How you update depends on which option you used in Part 2.
 | Your data (DB, API keys, transcripts) | `~/.youtube-channel-ai-vip/app.db` in your home folder — **not** in the project folder |
 | The app itself | The project folder you extracted/cloned |
 | The "server" (when running) | Running in the terminal window opened by `start.bat`/`start.command` |
-| The "website" you interact with | `http://localhost:3000` in your browser |
+| The "website" you interact with | `http://localhost:3010` in your browser |
 
 ---
 
@@ -334,9 +334,9 @@ How you update depends on which option you used in Part 2.
 3. If `app.db` keeps getting recreated empty → there might be an antivirus or sync service (OneDrive, iCloud) eating the WAL files. Move the project out of OneDrive/iCloud-synced folders.
 4. If you installed before August 2026 and just updated, look for an old `data/` folder inside the project — the app moves it across on first launch and leaves a `READ-ME-FIRST.txt` behind saying where it went.
 
-### "Port 3000 is already in use."
+### "Port 3010 is already in use."
 
-Another app on your computer is using port 3000 — very often our faceless-video generator, which also lives there. You have two options:
+Another app on your computer is using port 3010. (The app deliberately avoids 3000, which our faceless-video generator uses, so the two run side by side out of the box.) You have two options:
 
 - **Quit the other app** before starting this one, OR
 - **Run this app on its own port**, so both can run at the same time. Create a plain text file called `port.txt` in the project folder (next to `start.bat` / `start.command`) containing just a number, for example `3001`. Save it and double-click the launcher again — it will start on that port and open the browser there by itself.
